@@ -1,1 +1,5 @@
+# Python cached files
 __pycache__
+
+# Workspace-specific directores
+.idea
