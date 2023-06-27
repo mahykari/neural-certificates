@@ -1,12 +1,14 @@
-from learner import Learner
-from verifier import ReachVerifier, Verifier
+from learner import Learner, NN 
+from verifier import ReachVerifier
 
 
 MAX_CEGIS_ITER = 10
 
+# TODO:
+#  1. a configuration file for `main` (e.g. JSON file).  
 
 def main():
-  learner = Learner()
+  learner = Learner(NN(), NN())
   verifier = ReachVerifier()
 
   # CEGIS loop
