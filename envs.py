@@ -27,7 +27,7 @@ class SimpleEnv(gym.Env):
     self.steps = 0
     self.reset()
 
-  def reset(self, seed=None, options=None):
+  def reset(self):
     self.state = self.observation_space.sample()
     self.steps = 0
 
@@ -40,7 +40,7 @@ class SimpleEnv(gym.Env):
     ])
     return A @ x
 
-  def step(self, action=None):
+  def step(self):
     self.steps += 1    
     self.state = self._f(self.state)
     terminated = self.target_space.contains(self.state)
