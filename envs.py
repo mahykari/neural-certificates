@@ -31,7 +31,7 @@ class SimpleEnv(gym.Env):
     self.state = self.observation_space.sample()
     self.steps = 0
 
-  def _f(self, x):
+  def next(self, x):
     """The transition function f: X -> X."""
     a, b = self.alpha, self.beta
     A = np.array([
@@ -50,6 +50,6 @@ class SimpleEnv(gym.Env):
       state is a target state. 
     """
     self.steps += 1    
-    self.state = self._f(self.state)
+    self.state = self.next(self.state)
     terminated = self.target_space.contains(self.state)
     return self.state, terminated
