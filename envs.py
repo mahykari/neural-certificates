@@ -45,10 +45,11 @@ class SimpleEnv(gym.Env):
 
     Returns:
       state (a numpy array): state of the system after the update.
+      
       terminated (bool): flag indicating whether the (updated) system 
       state is a target state. 
     """
-    self.steps += 1    
+    self.steps += 1 
     self.state = self.next(self.state)
     terminated = self.target_space.contains(self.state)
     return self.state, terminated
