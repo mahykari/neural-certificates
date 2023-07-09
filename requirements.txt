@@ -1,2 +1,4 @@
 torch
 gymnasium
+maraboupy
+numpy
