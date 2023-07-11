@@ -1,8 +1,9 @@
-from typing import Set, TypeAlias
+from typing import Set
 
 
 # Placeholder type for Counter-Example
-CEx: TypeAlias = None
+class CEx:
+  ...
 
 
 class Verifier:
