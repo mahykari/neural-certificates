@@ -1,56 +1,27 @@
-from typing import Any
-from numpy.typing import NDArray
 import torch 
-import gymnasium as gym 
-import numpy as np 
-from gymnasium.spaces import Space, Box 
 
+class Box:
+  def __init__(self, low, high):
+    self.low = low
+    self.high = high
 
-class TensorBox(Box):
-  """A Tensor-compatible, limited version of 
-  `gymnasium.spaces.Box.`"""
-  
-  def __init__(
-      self, low: torch.Tensor, high: torch.Tensor):
-    super().__init__(low=low.numpy(), high=high.numpy())
-
-  def contains(self, x: torch.Tensor) -> bool:
-    return super().contains(x.numpy())
-
-  def sample(self) -> torch.Tensor:
-    return torch.from_numpy(super().sample())
-
-
-class SimpleEnv(gym.Env):
-  """A simple 2-dimensional dynamical system."""
+class Spiral:
+  """A simple 2-dimensional dynamical system with a spiral 
+  trajectory."""
   
   def __init__(self, alpha: float=0.5, beta: float=0.5):
-    self.state = None 
-    self.action_space = None 
+    self.alpha = alpha 
+    self.beta = beta
     
-    self.observation_space = TensorBox(
-      low  =torch.Tensor([-1.0, -1.0]),
-      high =torch.Tensor([ 1.0,  1.0]),
-    )
-    
-    self.init_space = TensorBox(
-      low  =torch.Tensor([0.9, 0.9]),
-      high =torch.Tensor([1.0, 1.0]),
+    self.observation_space = Box(
+      low =torch.Tensor([-1.0, -1.0]),
+      high=torch.Tensor([ 1.0,  1.0]),
     )
 
-    self.target_space = TensorBox(
-      low  =torch.Tensor([-0.05, -0.05]),
-      high =torch.Tensor([ 0.05,  0.05]),
+    self.target_space = Box(
+      low =torch.Tensor([-0.05, -0.05]),
+      high=torch.Tensor([ 0.05,  0.05]),
     )
-    
-    self.alpha, self.beta = alpha, beta
-    
-    self.steps = 0
-    self.reset()
-
-  def reset(self):
-    self.state = self.init_space.sample()
-    self.steps = 0
 
   def nxt(self, x: torch.Tensor):
     """The transition function f: X -> X."""
@@ -62,20 +33,26 @@ class SimpleEnv(gym.Env):
 
     return A @ x
 
-  # Alias for next, for simpler notation
+  # Alias for nxt, for simpler notation
   f = nxt
-
-  def step(self):
-    """
-    Execute the system dynamics for one time-step.
-
+  
+  def sample(self):
+    """Returns a tuple of samples from different regions of the state 
+    space.
+    
     Returns:
-      state (a numpy array): state of the system after the update.
-      
-      terminated (bool): flag indicating whether the (updated) system 
-      state is a target state. 
+      (X_tgt, X_dec, ): X_tgt and X_dec are points sampled from the 
+      target and decrease (everywhere outside target) space(s). 
     """
-    self.steps += 1 
-    self.state = self.nxt(self.state)
-    terminated = self.target_space.contains(self.state)
-    return self.state, terminated
+    # Not all samples will be outside the target region, but the 
+    # ratio of samples from this region will be negligible.
+    X = torch.rand(16000, 2)*2 - 1
+    # A mask to filter samples from the target region.
+    tgt_mask = torch.logical_and(
+        torch.abs(X[:,0]) <= 0.05,
+        torch.abs(X[:,1]) <= 0.05,
+    )
+    X_tgt = torch.rand(4000, 2)*0.1 - 0.05
+    X_dec = X[~tgt_mask]
+
+    return X_tgt, X_dec

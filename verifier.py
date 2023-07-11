@@ -1,4 +1,4 @@
-from typing import Set, TypeAlias
+from typing import Set
 
 import numpy
 from maraboupy import Marabou
@@ -11,7 +11,8 @@ from scipy.optimize import linprog
 
 
 # Placeholder type for Counter-Example
-CEx: TypeAlias = None
+class CEx:
+  ...
 
 # Global Marabou setting
 OPT = Marabou.createOptions(timeoutInSeconds=10,verbosity=0)
