@@ -35,12 +35,7 @@ def intersect(hs1, hs2) -> bool:
   res = linprog(c, A_ub, b_ub, bounds=bounds)
 
   return res.success
-  # if res.status == 2: # infeasible
-  #   return 'infeasible'
-  # elif res.status == 0:
-  #   return a, b
-  # else:
-  #   raise ValueError("inconclusive result of the linear programming problem")
+
 
 class Verifier:
   def __init__(self, f, certificate, grid):
