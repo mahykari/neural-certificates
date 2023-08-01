@@ -8,6 +8,7 @@ from verifier import ReachVerifier
 MAX_CEGIS_ITER = 10
 
 
+# Logging set-up
 root_logger = logging.getLogger('')
 handler = logging.StreamHandler()
 formatter = logging.Formatter(
