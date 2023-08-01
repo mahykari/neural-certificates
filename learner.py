@@ -1,5 +1,5 @@
 import logging 
-from typing import Callable
+from typing import Callable, List
 
 import torch
 import torch.nn as nn
@@ -10,22 +10,34 @@ import torch.optim as optim
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-class ReachNN(nn.Module):
-  def __init__(self):
-    super(ReachNN, self).__init__()
-    self.fc1 = nn.Linear(2, 8)
-    self.fc2 = nn.Linear(8, 4)
-    self.fc3 = nn.Linear(4, 1)
+
+class NN(nn.Module):
+  """Fully-connected neural network with ReLU activations."""
+  def __init__(self, lyr_struct: List[int]) -> None:
+    super().__init__()
+    assert len(lyr_struct) > 1
+    self.lyr_struct = lyr_struct
+    self.layers = nn.ModuleList()
+    self._init_layers(lyr_struct)
 
   def forward(self, x):
-    x = F.relu(self.fc1(x))
-    x = F.relu(self.fc2(x))
-    x = F.relu(self.fc3(x))
-    return x
+    for l in self.layers:
+      x = F.relu(l(x))
+    return x 
+
+  def _init_layers(self, lyr_struct):
+    for n_in, n_out in zip(lyr_struct, lyr_struct[1:]):
+      self.layers.append(
+        nn.Linear(n_in, n_out)
+      )
+
+
+def REACH_NN():
+  return NN([2, 8, 4, 1])
 
 
 class ReachLearner:
-  def __init__(self, f: Callable, cert: nn.Module=ReachNN()):
+  def __init__(self, f: Callable, cert: nn.Module=REACH_NN()):
     """Args:
       f: system transition function; f is an element of X^X.
       cert: the certificate NN.
