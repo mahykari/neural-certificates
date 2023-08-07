@@ -2,7 +2,7 @@ from typing import List
 
 import numpy as np
 
-from learner import NN
+from learner import ReLUNet
 
 
 class Verifier:

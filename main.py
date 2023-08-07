@@ -4,6 +4,8 @@ from envs import Spiral
 from learner import ReachLearner
 from verifier import ReachVerifier
 
+from learner import reach_nn
+
 
 MAX_CEGIS_ITER = 10
 
@@ -20,8 +22,7 @@ root_logger.addHandler(handler)
 def main():
   env = Spiral()
   C_tgt, C_dec = env.sample()
-  
-  learner = ReachLearner(env.f)
+  learner = ReachLearner(env.f, reach_nn())
   verifier = ReachVerifier()
 
   # CEGIS loop
