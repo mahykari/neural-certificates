@@ -1,5 +1,9 @@
 torch
 gymnasium
 numpy
-pytope
+matplotlib
 scipy
+notebook
+z3-solver
+scikit-learn
+
