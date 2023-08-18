@@ -42,8 +42,17 @@ class Learner_Reach_C:
       env: Env, 
       cert: nn.Module):
     """Args:
-      f: system transition function; f is an element of X^X.
-      cert: the certificate NN.
+      env: dynamical system.
+      cert: certificate NN.
+
+      Assumption. Cert is a fully-connected NN with ReLU activation
+      after each hidden layer, as well as the output layer. We can 
+      simply assume cert to be an instance of nn.Sequential, 
+      initialized as follows: 
+      nn.Sequential(
+        nn.Linear(...),
+        nn.ReLU(),
+        ... )
     """
     self.env = env
     self.cert = cert
@@ -89,7 +98,7 @@ class Learner_Reach_C:
         #   * Backward propagation: after this step, gradients of the
         #     loss function with respect to the network weights are 
         #     calculated.
-        #   * SGD step: updating network weights.
+        #   * Optimizer step: updating network weights.
         X_tgt, X_dec = next(tgt_it), next(dec_it) 
         optimizer.zero_grad()
         loss = self._cert_loss_fn(X_tgt, X_dec)
@@ -116,7 +125,7 @@ class Learner_Reach_C:
 
     Args:
       X_tgt: a batch of points sampled from the target space.
-      tau: tunable hyperparameter for the learning process.
+      eps_tgt: tunable hyperparameter for the learning process.
     """
     N = len(X_tgt)
     return 1/N * torch.sum(
@@ -131,7 +140,7 @@ class Learner_Reach_C:
 
     Args:
       X_dec: a batch of points sampled from outside the target space.
-      eps: tunable hyperparameter for the learning process.
+      eps_dec: tunable hyperparameter for the learning process.
     """
     N = len(X_dec)
 
@@ -144,19 +153,19 @@ class Learner_Reach_C:
     return 1/N * torch.sum(
       torch.relu(self.cert(X_nxt) - self.cert(X_dec) + eps_dec))
 
-  def chk_tgt(self, X_tgt, eps_tgt=EPS_TGT):
+  def chk_tgt(self, C_tgt, eps_tgt=EPS_TGT):
     """Check for Target condition on training data."""
-    v = self.cert(X_tgt)
+    v = self.cert(C_tgt)
     return torch.all(v <= eps_tgt)
 
 
-  def chk_dec(self, X_dec, eps_dec=EPS_DEC):
+  def chk_dec(self, C_dec, eps_dec=EPS_DEC):
     """Check for Decrease condition on training data."""
-    v = self.cert(X_dec)
-    vf = self.cert(torch.vmap(self.env.f)(X_dec))
+    v = self.cert(C_dec)
+    vf = self.cert(torch.vmap(self.env.f)(C_dec))
     return torch.all(v - vf >= eps_dec)
   
-  def chk(self, X_tgt, X_dec):
+  def chk(self, C_tgt, C_dec):
     return (
-      self.chk_tgt(X_tgt)
-      and self.chk_dec(X_dec) )
+      self.chk_tgt(C_tgt)
+      and self.chk_dec(C_dec) )
