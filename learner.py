@@ -2,7 +2,6 @@ import logging
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.utils.data as D 
 import torch.optim as optim
 
@@ -26,7 +25,15 @@ def reach_nn():
   )
 
 
-class ReachLearner:
+# Learners---and similarly, verifiers---are named based on the 
+# following rule: Learner_<Property>_<Components>.
+# Property can be Reach, Safe, or ReachAvoid. Components is a 
+# (sorted) sequence of characters, where each character shows a 
+# particular NN (or generally, model) in the learner. For instance, 
+# Learner_Reach_AC is a learner for property Reach, and contains a 
+# NN for Abstraction (A) and Certificate (C). 
+
+class Learner_Reach_C:
   EPS_TGT, EPS_DEC = 3e-1, 1e-2
   LR, WEIGHT_DECAY = 3e-3, 1e-5
 
@@ -62,9 +69,7 @@ class ReachLearner:
     N_EPOCH, N_BATCH = 512, 40
     BATSZ_TGT, BATSZ_DEC = (
       len(C_tgt) // N_BATCH, len(C_dec) // N_BATCH)
-    logger.info(
-      'N_EPOCH, N_BATCH, BATSZ_TGT, BATSZ_DEC='
-      + f'{N_EPOCH}, {N_BATCH}, {BATSZ_TGT}, {BATSZ_DEC}')
+    
     # Adam optimizer. `lr` and `weight_decay` are the learning rate 
     # and the weight regularization parameter, respectively.
     optimizer = optim.Adam(
