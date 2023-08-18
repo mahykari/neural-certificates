@@ -52,7 +52,7 @@ class Spiral:
         torch.abs(X[:,0]) <= 0.05,
         torch.abs(X[:,1]) <= 0.05,
     )
-    X_tgt = torch.rand(4000, 2)*0.1 - 0.05
+    X_tgt = torch.rand(1000, 2)*0.1 - 0.05
     X_dec = X[~tgt_mask]
 
     return X_tgt, X_dec
