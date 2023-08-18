@@ -1,10 +1,3 @@
-from typing import List 
-
-import numpy as np
-
-from learner import ReLUNet
-
-
 class Verifier:
   # Find counter-examples for a given learner
   def cexs(self) -> ...:
