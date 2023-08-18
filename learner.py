@@ -1,78 +1,90 @@
 import logging 
-from typing import Callable
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.utils.data as D 
 import torch.optim as optim
+
+from envs import Env 
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-class ReachNN(nn.Module):
-  def __init__(self):
-    super(ReachNN, self).__init__()
-    self.fc1 = nn.Linear(2, 8)
-    self.fc2 = nn.Linear(8, 4)
-    self.fc3 = nn.Linear(4, 1)
 
-  def forward(self, x):
-    x = F.relu(self.fc1(x))
-    x = F.relu(self.fc2(x))
-    x = F.relu(self.fc3(x))
-    return x
+def reach_nn():
+  """Utility function to generate a default Reach certificate for a 
+  2D space."""
+  return nn.Sequential(
+    nn.Linear(2, 8),
+    nn.ReLU(),
+    nn.Linear(8, 4),
+    nn.ReLU(),
+    nn.Linear(4, 1),
+    nn.ReLU()
+  )
 
 
-class ReachLearner:
-  def __init__(self, f: Callable, cert: nn.Module=ReachNN()):
+# Learners---and similarly, verifiers---are named based on the 
+# following rule: Learner_<Property>_<Components>.
+# Property can be Reach, Safe, or ReachAvoid. Components is a 
+# (sorted) sequence of characters, where each character shows a 
+# particular NN (or generally, model) in the learner. For instance, 
+# Learner_Reach_AC is a learner for property Reach, and contains a 
+# NN for Abstraction (A) and Certificate (C). 
+
+class Learner_Reach_C:
+  EPS_TGT, EPS_DEC = 3e-1, 1e-2
+  LR, WEIGHT_DECAY = 3e-3, 1e-5
+
+  def __init__(
+      self, 
+      env: Env, 
+      cert: nn.Module):
     """Args:
       f: system transition function; f is an element of X^X.
       cert: the certificate NN.
     """
-    self.f = f
+    self.env = env
     self.cert = cert
-    # self.abst = abs
 
   def fit(self, C_tgt, C_dec):
-    """Fits `cert` and `abst` based on a pre-defined loss function.
+    """Fits cert based on a predefined loss function.
 
     The fitting process is as follows:
-      1. The certificate NN is trained.
-      2. ...
+      ...
+      <?>. The certificate NN is trained.
+      ...
 
     Args:
-      C_tgt: the 'set' (matrix) of training target states.
+      C_tgt: the 'set' (torch.Tensor) of training target states. This 
+      argument is labelled as C_tgt, as it is utilized to learn the 
+      Target condition.
       C_dec: the set of training non-target states. This argument is 
-      labelled as C_dec, as it is utilized to learn the Decrease 
-      condition of a Lyapunov function.
+      labelled as C_dec in a fashion similar to C_tgt. 
     """
-    self._fit_cert_loop(C_tgt, C_dec)
-    # TODO: add abstraction training phase.
+    self._fit_cert(C_tgt, C_dec)
 
-  def _fit_cert_loop(self, C_tgt, C_dec):
+  def _fit_cert(self, C_tgt, C_dec):
     N_EPOCH, N_BATCH = 512, 40
     BATSZ_TGT, BATSZ_DEC = (
       len(C_tgt) // N_BATCH, len(C_dec) // N_BATCH)
-    logger.info('N_EPOCH, N_BATCH, BATSZ_TGT, BATSZ_DEC='+ 
-          f'{N_EPOCH}, {N_BATCH}, {BATSZ_TGT}, {BATSZ_DEC}')
-    # Stochastic Gradient Descent optimizer. `lr` and `weight_decay` 
-    # are the learning rate and the weight regularization parameter, 
-    # respectively.
-    optimizer = optim.SGD(
-      self.cert.parameters(), lr=3e-3, weight_decay=1e-4)
+    
+    # Adam optimizer. `lr` and `weight_decay` are the learning rate 
+    # and the weight regularization parameter, respectively.
+    optimizer = optim.Adam(
+      self.cert.parameters(), lr=3.3e-3, weight_decay=1e-5)
 
     # DataLoader's simplify using mini-batches in the training loop.
     tgt_ld = D.DataLoader(C_tgt, batch_size=BATSZ_TGT, shuffle=True)
     dec_ld = D.DataLoader(C_dec, batch_size=BATSZ_DEC, shuffle=True)
 
-    for e in range(N_EPOCH):
-      epoch_loss = 0
+    for ـ in range(N_EPOCH):
       tgt_it, dec_it = iter(tgt_ld), iter(dec_ld)
       for _ in range(N_BATCH):
         # Training each batch consists of the following steps:
-        #   * Set-up: fetching a batch for X_tgt, X_dec (from the 
-        #     dataloaders), zero'ing gradient buffers.
+        #   * Setup: fetching a batch for X_tgt, X_dec (from the 
+        #     dataloaders), zeroing gradient buffers.
         #   * Loss: computing the loss function on the batches.
         #   * Backward propagation: after this step, gradients of the
         #     loss function with respect to the network weights are 
@@ -81,11 +93,8 @@ class ReachLearner:
         X_tgt, X_dec = next(tgt_it), next(dec_it) 
         optimizer.zero_grad()
         loss = self._cert_loss_fn(X_tgt, X_dec)
-        epoch_loss += loss.item()
         loss.backward()
         optimizer.step()
-      if e % 64 == 0:
-        logger.info(f'e={e:>3}. epoch_loss={epoch_loss:10.6f}')
 
   def _cert_loss_fn(self, X_tgt, X_dec):
     """Aggregate loss function for the certificate NN. 
@@ -95,11 +104,11 @@ class ReachLearner:
     """
     return (
       1*self._loss_tgt(X_tgt) +
-      32*self._loss_dec(X_dec)
+      100*self._loss_dec(X_dec)
     )
 
-  def _loss_tgt(self, X_tgt, tau=3e-1):
-    """Loss component for the 'target' condition.
+  def _loss_tgt(self, X_tgt, eps_tgt=EPS_TGT):
+    """Loss component for the Target condition.
     
     For any point x in X_tgt, this functions increases the loss if 
     cert(x) - tau > 0. This enforces that the learned certificate 
@@ -111,15 +120,13 @@ class ReachLearner:
     """
     N = len(X_tgt)
     return 1/N * torch.sum(
-      torch.relu(self.cert(X_tgt) - tau)
-    )
+      torch.relu(self.cert(X_tgt) - eps_tgt))
 
-
-  def _loss_dec(self, X_dec, eps=1e-2):
-    """Loss component for the Decrease Condition.
+  def _loss_dec(self, X_dec, eps_dec=EPS_DEC):
+    """Loss component for the Decrease condition.
 
     For any point x in X_dec, this functions increases the loss if 
-    cert(f(x)) - cert(x) + eps > 0. This enforces that 
+    cert(f(x)) - cert(x) + eps_dec > 0. This enforces that 
     cert(f(x)) < cert(x) for all x in C_dec. 
 
     Args:
@@ -128,14 +135,28 @@ class ReachLearner:
     """
     N = len(X_dec)
 
-    # We assume self.f only works on a single point in the state 
-    # space. Using torch.vmap allows us to evaluate self.f on a set 
-    # of points. 
-    f_ = torch.vmap(self.f)
+    # We assume self.env.f only works on a single point in the state 
+    # space. Using torch.vmap allows us to evaluate self.env.f on a 
+    # set (i.e., a torch.Tensor) of points. 
+    f_ = torch.vmap(self.env.f)
     X_nxt = f_(X_dec)
 
     return 1/N * torch.sum(
-      torch.relu(
-        self.cert(X_nxt) - self.cert(X_dec) + eps
-      )
-    )
+      torch.relu(self.cert(X_nxt) - self.cert(X_dec) + eps_dec))
+
+  def chk_tgt(self, X_tgt, eps_tgt=EPS_TGT):
+    """Check for Target condition on training data."""
+    v = self.cert(X_tgt)
+    return torch.all(v <= eps_tgt)
+
+
+  def chk_dec(self, X_dec, eps_dec=EPS_DEC):
+    """Check for Decrease condition on training data."""
+    v = self.cert(X_dec)
+    vf = self.cert(torch.vmap(self.env.f)(X_dec))
+    return torch.all(v - vf >= eps_dec)
+  
+  def chk(self, X_tgt, X_dec):
+    return (
+      self.chk_tgt(X_tgt)
+      and self.chk_dec(X_dec) )

@@ -1,9 +1,13 @@
 # Python cached files
 __pycache__
 
+# Python environments
+.venv/
+
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints 
 
 # Workspace-specific directores
 .idea
 .vscode
+
