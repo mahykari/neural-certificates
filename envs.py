@@ -1,9 +1,21 @@
 import torch 
 
+
+class Env:
+  """Generic base class for all defined environments. 
+  
+  *IMPORTANT*: All defined environments should inherit from this 
+  class.
+  """
+  def f(self, _):
+    ...
+
+
 class Box:
   def __init__(self, low, high):
     self.low = low
     self.high = high
+
 
 class Spiral:
   """A simple 2-dimensional dynamical system with a spiral 
