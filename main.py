@@ -10,13 +10,16 @@ from learner import reach_nn
 MAX_CEGIS_ITER = 10
 
 
-# Logging set-up
+# Logging setup
 root_logger = logging.getLogger('')
 handler = logging.StreamHandler()
 formatter = logging.Formatter(
   '%(asctime)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
 root_logger.addHandler(handler)
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def main():
@@ -27,6 +30,7 @@ def main():
 
   # CEGIS loop
   for _ in range(MAX_CEGIS_ITER):
+    logger.info('CEGIS. Next iter.')
     learner.fit(C_tgt, C_dec)
     if not verifier.cexs():
       break
