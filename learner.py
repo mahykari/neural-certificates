@@ -1,11 +1,13 @@
 import logging 
-from typing import Callable, List
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.data as D 
 import torch.optim as optim
+
+from envs import Env 
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -30,13 +32,13 @@ class ReachLearner:
 
   def __init__(
       self, 
-      f: Callable, 
+      env: Env, 
       cert: nn.Module):
     """Args:
       f: system transition function; f is an element of X^X.
       cert: the certificate NN.
     """
-    self.f = f
+    self.env = env
     self.cert = cert
 
   def fit(self, C_tgt, C_dec):
@@ -128,11 +130,28 @@ class ReachLearner:
     """
     N = len(X_dec)
 
-    # We assume self.f only works on a single point in the state 
-    # space. Using torch.vmap allows us to evaluate self.f on a set 
-    # (i.e., a torch.Tensor) of points. 
-    f_ = torch.vmap(self.f)
+    # We assume self.env.f only works on a single point in the state 
+    # space. Using torch.vmap allows us to evaluate self.env.f on a 
+    # set (i.e., a torch.Tensor) of points. 
+    f_ = torch.vmap(self.env.f)
     X_nxt = f_(X_dec)
 
     return 1/N * torch.sum(
       torch.relu(self.cert(X_nxt) - self.cert(X_dec) + eps_dec))
+
+  def chk_tgt(self, X_tgt, eps_tgt=EPS_TGT):
+    """Check for Target condition on training data."""
+    v = self.cert(X_tgt)
+    return torch.all(v <= eps_tgt)
+
+
+  def chk_dec(self, X_dec, eps_dec=EPS_DEC):
+    """Check for Decrease condition on training data."""
+    v = self.cert(X_dec)
+    vf = self.cert(torch.vmap(self.env.f)(X_dec))
+    return torch.all(v - vf >= eps_dec)
+  
+  def chk(self, X_tgt, X_dec):
+    return (
+      self.chk_tgt(X_tgt)
+      and self.chk_dec(X_dec) )
