@@ -1,8 +1,8 @@
 import logging
 
 from envs import Spiral
-from learner import ReachLearner
-from verifier import ReachVerifier
+from learner import Learner_Reach_C
+from verifier import Verifier_Reach_C
 
 from learner import reach_nn
 
@@ -20,22 +20,24 @@ handler.setFormatter(formatter)
 root_logger.addHandler(handler)
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 
 def main():
   env = Spiral()
   C_tgt, C_dec = env.sample()
-  verifier = ReachVerifier()
+  verifier = Verifier_Reach_C()
 
   # CEGIS loop
+  # TODO. Check if the internal training loop can be removed.
   for _ in range(MAX_CEGIS_ITER):
     logger.info('CEGIS. Next iter.')
     learner = None 
-    for _ in range(MAX_TRAIN_ITER):
-      new_lrnr = ReachLearner(env, reach_nn())
+    for i in range(MAX_TRAIN_ITER):
+      new_lrnr = Learner_Reach_C(env, reach_nn())
       new_lrnr.fit(C_tgt, C_dec)
       if new_lrnr.chk(C_tgt, C_dec):
+        logger.debug(f'CEGIS. learner found at iter. {i}.')
         learner = new_lrnr
         break
     if not learner:
