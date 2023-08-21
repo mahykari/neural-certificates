@@ -1,39 +1,66 @@
+from abc import ABC, abstractmethod
+
+import numpy as np
 import torch 
 
 
-class Env:
+class Box:
+  def __init__(self, low: torch.Tensor, high: torch.Tensor):
+    self.low = low
+    self.high = high
+
+
+class Env(ABC):
   """Generic base class for all defined environments. 
   
   *IMPORTANT*: All defined environments should inherit from this 
   class.
   """
+  
+  @property
+  @abstractmethod
+  def dim(self):
+    ...
+  
+  @property
+  @abstractmethod
+  def bnd(self) -> Box:
+    """Bounds of the environment."""
+    ...
+
+  @property
+  @abstractmethod
+  def tgt(self) -> Box:
+    """Target space of the environment."""
+    ...
+
+  @property
+  @abstractmethod
   def f(self, _):
+    """State transition function."""
     ...
 
 
-class Box:
-  def __init__(self, low, high):
-    self.low = low
-    self.high = high
-
-
-class Spiral:
+class Spiral(Env):
+  ALPHA, BETA = 0.5, 0.5
   """A simple 2-dimensional dynamical system with a spiral 
   trajectory."""
   
+  dim = 2
+
+  bnd = Box(
+    low =torch.Tensor([-1.0, -1.0]),
+    high=torch.Tensor([ 1.0,  1.0]),
+  )
+
+  tgt = Box(
+    low =torch.Tensor([-0.05, -0.05]),
+    high=torch.Tensor([ 0.05,  0.05]),
+  )
+
   def __init__(self, alpha: float=0.5, beta: float=0.5):
     self.alpha = alpha 
     self.beta = beta
-    
-    self.observation_space = Box(
-      low =torch.Tensor([-1.0, -1.0]),
-      high=torch.Tensor([ 1.0,  1.0]),
-    )
-
-    self.target_space = Box(
-      low =torch.Tensor([-0.05, -0.05]),
-      high=torch.Tensor([ 0.05,  0.05]),
-    )
 
   def nxt(self, x: torch.Tensor):
     """The transition function f: X -> X."""
@@ -68,3 +95,11 @@ class Spiral:
     X_dec = X[~tgt_mask]
 
     return X_tgt, X_dec
+
+
+def F_Spiral(x, alpha=Spiral.ALPHA, beta=Spiral.BETA):
+  A = np.array( [
+    [ alpha,  beta], 
+    [- beta, alpha] 
+  ] )
+  return A @ x
