@@ -27,6 +27,7 @@ def main():
   env = Spiral()
   C_tgt, C_dec = env.sample()
 
+  # TODO. Tgt condition is not needed. Make changes accordingly.
   # CEGIS loop
   # TODO. Check if the internal training loop can be removed.
   for _ in range(MAX_CEGIS_ITER):
