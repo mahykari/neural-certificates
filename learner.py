@@ -9,7 +9,7 @@ from envs import Env
 
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 
 def reach_nn():
@@ -88,8 +88,9 @@ class Learner_Reach_C:
     tgt_ld = D.DataLoader(C_tgt, batch_size=BATSZ_TGT, shuffle=True)
     dec_ld = D.DataLoader(C_dec, batch_size=BATSZ_DEC, shuffle=True)
 
-    for ـ in range(N_EPOCH):
+    for e in range(N_EPOCH+1):
       tgt_it, dec_it = iter(tgt_ld), iter(dec_ld)
+      epoch_loss = 0
       for _ in range(N_BATCH):
         # Training each batch consists of the following steps:
         #   * Setup: fetching a batch for X_tgt, X_dec (from the 
@@ -102,8 +103,11 @@ class Learner_Reach_C:
         X_tgt, X_dec = next(tgt_it), next(dec_it) 
         optimizer.zero_grad()
         loss = self._cert_loss_fn(X_tgt, X_dec)
+        epoch_loss += loss.item()
         loss.backward()
         optimizer.step()
+      if e % N_EPOCH == 0:
+        logger.debug(f'Epoch={e:>4}. Loss={epoch_loss:10.6f}.')
 
   def _cert_loss_fn(self, X_tgt, X_dec):
     """Aggregate loss function for the certificate NN. 
@@ -112,8 +116,9 @@ class Learner_Reach_C:
     functions and calling them in the expression evaluated below.
     """
     return (
-      1*self._loss_tgt(X_tgt) +
-      100*self._loss_dec(X_dec)
+      # 1*self._loss_tgt(X_tgt) 
+      0*self._loss_tgt(X_tgt) 
+      + 100*self._loss_dec(X_dec)
     )
 
   def _loss_tgt(self, X_tgt, eps_tgt=EPS_TGT):
@@ -153,10 +158,10 @@ class Learner_Reach_C:
     return 1/N * torch.sum(
       torch.relu(self.cert(X_nxt) - self.cert(X_dec) + eps_dec))
 
-  def chk_tgt(self, C_tgt, eps_tgt=EPS_TGT):
-    """Check for Target condition on training data."""
-    v = self.cert(C_tgt)
-    return torch.all(v <= eps_tgt)
+  # def chk_tgt(self, C_tgt, eps_tgt=EPS_TGT):
+  #   """Check for Target condition on training data."""
+  #   v = self.cert(C_tgt)
+  #   return torch.all(v <= eps_tgt)
 
 
   def chk_dec(self, C_dec, eps_dec=EPS_DEC):
@@ -165,7 +170,8 @@ class Learner_Reach_C:
     vf = self.cert(torch.vmap(self.env.f)(C_dec))
     return torch.all(v - vf >= eps_dec)
   
-  def chk(self, C_tgt, C_dec):
-    return (
-      self.chk_tgt(C_tgt)
-      and self.chk_dec(C_dec) )
+  def chk(self, _C_tgt, C_dec):
+    # return (
+    #   self.chk_tgt(C_tgt)
+    #   and self.chk_dec(C_dec) )
+    return self.chk_dec(C_dec)
