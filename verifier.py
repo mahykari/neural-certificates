@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 import z3
 import numpy as np
 import torch.nn as nn
-from typing import Callable, List
+from typing import Callable
 
 from envs import Box, Env
 
@@ -114,4 +114,5 @@ class Verifier_Reach_C(Verifier):
     bounds.append(BoundOut(self.env.tgt))
     problem.append(v  == Net(self.cert, x)[0])
     problem.append(vf == Net(self.cert, self.F(x))[0])
+    problem.append(v <= vf)
     return cex(bounds + problem, x)
