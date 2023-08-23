@@ -9,7 +9,7 @@ from envs import Env
 
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 
 def reach_nn():
@@ -42,8 +42,17 @@ class Learner_Reach_C:
       env: Env, 
       cert: nn.Module):
     """Args:
-      f: system transition function; f is an element of X^X.
-      cert: the certificate NN.
+      env: dynamical system.
+      cert: certificate NN.
+
+      Assumption. Cert is a fully-connected NN with ReLU activation
+      after each hidden layer, as well as the output layer. We can 
+      simply assume cert to be an instance of nn.Sequential, 
+      initialized as follows: 
+      nn.Sequential(
+        nn.Linear(...),
+        nn.ReLU(),
+        ... )
     """
     self.env = env
     self.cert = cert
@@ -79,8 +88,9 @@ class Learner_Reach_C:
     tgt_ld = D.DataLoader(C_tgt, batch_size=BATSZ_TGT, shuffle=True)
     dec_ld = D.DataLoader(C_dec, batch_size=BATSZ_DEC, shuffle=True)
 
-    for ـ in range(N_EPOCH):
+    for e in range(N_EPOCH+1):
       tgt_it, dec_it = iter(tgt_ld), iter(dec_ld)
+      epoch_loss = 0
       for _ in range(N_BATCH):
         # Training each batch consists of the following steps:
         #   * Setup: fetching a batch for X_tgt, X_dec (from the 
@@ -89,12 +99,15 @@ class Learner_Reach_C:
         #   * Backward propagation: after this step, gradients of the
         #     loss function with respect to the network weights are 
         #     calculated.
-        #   * SGD step: updating network weights.
+        #   * Optimizer step: updating network weights.
         X_tgt, X_dec = next(tgt_it), next(dec_it) 
         optimizer.zero_grad()
         loss = self._cert_loss_fn(X_tgt, X_dec)
+        epoch_loss += loss.item()
         loss.backward()
         optimizer.step()
+      if e % N_EPOCH == 0:
+        logger.debug(f'Epoch={e:>4}. Loss={epoch_loss:10.6f}.')
 
   def _cert_loss_fn(self, X_tgt, X_dec):
     """Aggregate loss function for the certificate NN. 
@@ -103,8 +116,9 @@ class Learner_Reach_C:
     functions and calling them in the expression evaluated below.
     """
     return (
-      1*self._loss_tgt(X_tgt) +
-      100*self._loss_dec(X_dec)
+      # 1*self._loss_tgt(X_tgt) 
+      0*self._loss_tgt(X_tgt) 
+      + 100*self._loss_dec(X_dec)
     )
 
   def _loss_tgt(self, X_tgt, eps_tgt=EPS_TGT):
@@ -116,7 +130,7 @@ class Learner_Reach_C:
 
     Args:
       X_tgt: a batch of points sampled from the target space.
-      tau: tunable hyperparameter for the learning process.
+      eps_tgt: tunable hyperparameter for the learning process.
     """
     N = len(X_tgt)
     return 1/N * torch.sum(
@@ -131,7 +145,7 @@ class Learner_Reach_C:
 
     Args:
       X_dec: a batch of points sampled from outside the target space.
-      eps: tunable hyperparameter for the learning process.
+      eps_dec: tunable hyperparameter for the learning process.
     """
     N = len(X_dec)
 
@@ -144,19 +158,20 @@ class Learner_Reach_C:
     return 1/N * torch.sum(
       torch.relu(self.cert(X_nxt) - self.cert(X_dec) + eps_dec))
 
-  def chk_tgt(self, X_tgt, eps_tgt=EPS_TGT):
-    """Check for Target condition on training data."""
-    v = self.cert(X_tgt)
-    return torch.all(v <= eps_tgt)
+  # def chk_tgt(self, C_tgt, eps_tgt=EPS_TGT):
+  #   """Check for Target condition on training data."""
+  #   v = self.cert(C_tgt)
+  #   return torch.all(v <= eps_tgt)
 
 
-  def chk_dec(self, X_dec, eps_dec=EPS_DEC):
+  def chk_dec(self, C_dec, eps_dec=EPS_DEC):
     """Check for Decrease condition on training data."""
-    v = self.cert(X_dec)
-    vf = self.cert(torch.vmap(self.env.f)(X_dec))
+    v = self.cert(C_dec)
+    vf = self.cert(torch.vmap(self.env.f)(C_dec))
     return torch.all(v - vf >= eps_dec)
   
-  def chk(self, X_tgt, X_dec):
-    return (
-      self.chk_tgt(X_tgt)
-      and self.chk_dec(X_dec) )
+  def chk(self, _C_tgt, C_dec):
+    # return (
+    #   self.chk_tgt(C_tgt)
+    #   and self.chk_dec(C_dec) )
+    return self.chk_dec(C_dec)
