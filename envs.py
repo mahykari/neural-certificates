@@ -5,6 +5,18 @@ import torch
 
 
 class Box:
+  """Arbitrary-dimensional bounded box.
+  
+  Box is initialized with two points:
+    low  = [l_1, ..., l_k], and 
+    high = [h_1, ..., h_k]. 
+  Each point x = [x_1, ..., x_k] inside this box satisfies condition 
+  l_i <= x_i <= h_i for all 1 <= i <= k.
+
+  The choice of torch.Tensor as the type for low and high was to 
+  simplify dependent torch computations. This condition can be 
+  relaxed in the future.
+  """
   def __init__(self, low: torch.Tensor, high: torch.Tensor):
     self.low = low
     self.high = high
@@ -20,6 +32,7 @@ class Env(ABC):
   @property
   @abstractmethod
   def dim(self):
+    """Number of dimensions of the environment."""
     ...
   
   @property
@@ -80,21 +93,22 @@ class Spiral(Env):
     space.
     
     Returns:
-      (X_tgt, X_dec, ): X_tgt and X_dec are points sampled from the 
-      target and decrease (everywhere outside target) space(s). 
+      (X_dec, ): X_dec are points sampled from the decrease 
+      (everywhere outside target) space. 
     """
     # Not all samples will be outside the target region, but the 
     # ratio of samples from this region will be negligible.
-    X = torch.rand(16000, 2)*2 - 1
+    X = torch.rand(4000, 2)*2 - 1
     # A mask to filter samples from the target region.
     tgt_mask = torch.logical_and(
         torch.abs(X[:,0]) <= 0.05,
         torch.abs(X[:,1]) <= 0.05,
     )
-    X_tgt = torch.rand(1000, 2)*0.1 - 0.05
+    # X_tgt = torch.rand(250, 2)*0.1 - 0.05
     X_dec = X[~tgt_mask]
 
-    return X_tgt, X_dec
+    # return X_tgt, X_dec
+    return X_dec
 
 
 def F_Spiral(x, alpha=Spiral.ALPHA, beta=Spiral.BETA):
