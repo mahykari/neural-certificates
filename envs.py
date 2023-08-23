@@ -117,3 +117,64 @@ def F_Spiral(x, alpha=Spiral.ALPHA, beta=Spiral.BETA):
     [- beta, alpha] 
   ] )
   return A @ x
+
+
+class SuspendedPendulum(Env):
+  """A simple 2-dimensional pendulum, suspended freely."""
+  # g_ = gravitational acceleration, l_ = rod length, m_ = bob mass,
+  # b_ = damping coefficient
+  g_, l_, m_, b_ = 9.8, 1, 1, 0.2
+  tau_ = 0.01 # sampling times
+  dim = 2
+
+  bnd = Box(
+    # the bounds on the angular velocity are too pessimistic for now
+    low=torch.Tensor([-3.14, -8]),
+    high=torch.Tensor([3.14, 8]),
+  )
+
+  tgt = Box(
+    low=torch.Tensor([-0.05, -0.05]),
+    high=torch.Tensor([0.05, 0.05]),
+  )
+
+  def __init__(self, alpha: float = 0.5, beta: float = 0.5):
+    self.g_ = g_
+    self.l_ = l_
+    self.m_ = m_
+    self.b_ = b_
+
+  def nxt(self, x: torch.Tensor):
+    """The transition function f: X -> X."""
+    g, l, m, b = self.g_, self.l_, self.m_, self.b_
+    tau = self.tau
+
+    xx_a = x[0] + x[1]*tau
+    xx_b = x[1] + (-(b/m)*x[1] - (g/l)*torch.sin(x[0]))*tau
+
+    return torch.Tensor([xx_a, xx_b])
+
+  # Alias for nxt, for simpler notation
+  f = nxt
+
+  def sample(self):
+    """Returns a tuple of samples from different regions of the state
+    space.
+
+    Returns:
+      (X_dec, ): X_dec are points sampled from the decrease
+      (everywhere outside target) space.
+    """
+    # Not all samples will be outside the target region, but the
+    # ratio of samples from this region will be negligible.
+    X = torch.rand(4000, 2) * 2 - 1
+    # A mask to filter samples from the target region.
+    tgt_mask = torch.logical_and(
+      torch.abs(X[:, 0]) <= 0.05,
+      torch.abs(X[:, 1]) <= 0.05,
+    )
+    # X_tgt = torch.rand(250, 2)*0.1 - 0.05
+    X_dec = X[~tgt_mask]
+
+    # return X_tgt, X_dec
+    return X_dec
