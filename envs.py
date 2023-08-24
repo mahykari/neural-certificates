@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 
 import numpy as np
+import sympy as sp
 import torch 
 
 
@@ -71,7 +72,7 @@ class Spiral(Env):
     high=torch.Tensor([ 0.05,  0.05]),
   )
 
-  def __init__(self, alpha: float=0.5, beta: float=0.5):
+  def __init__(self, alpha: float=ALPHA, beta: float=BETA):
     self.alpha = alpha 
     self.beta = beta
 
@@ -124,11 +125,11 @@ class SuspendedPendulum(Env):
   # g_ = gravitational acceleration, l_ = rod length, m_ = bob mass,
   # b_ = damping coefficient
   g_, l_, m_, b_ = 9.8, 1, 1, 0.2
-  tau_ = 0.01 # sampling times
+  tau_ = 0.01 # Sampling times
   dim = 2
 
   bnd = Box(
-    # the bounds on the angular velocity are too pessimistic for now
+    # The bounds on the angular velocity are too pessimistic for now
     low=torch.Tensor([-3.14, -8]),
     high=torch.Tensor([3.14, 8]),
   )
@@ -138,16 +139,21 @@ class SuspendedPendulum(Env):
     high=torch.Tensor([0.05, 0.05]),
   )
 
-  def __init__(self, alpha: float = 0.5, beta: float = 0.5):
-    self.g_ = g_
-    self.l_ = l_
-    self.m_ = m_
-    self.b_ = b_
+  def __init__(
+      self, 
+      g: float=g_, 
+      l: float=l_,
+      m: float=m_,
+      b: float=b_):
+    self.g = g
+    self.l = l
+    self.m = m
+    self.b = b
 
   def nxt(self, x: torch.Tensor):
     """The transition function f: X -> X."""
-    g, l, m, b = self.g_, self.l_, self.m_, self.b_
-    tau = self.tau
+    g, l, m, b = self.g, self.l, self.m, self.b
+    tau = self.tau_
 
     xx_a = x[0] + x[1]*tau
     xx_b = x[1] + (-(b/m)*x[1] - (g/l)*torch.sin(x[0]))*tau
@@ -167,7 +173,9 @@ class SuspendedPendulum(Env):
     """
     # Not all samples will be outside the target region, but the
     # ratio of samples from this region will be negligible.
-    X = torch.rand(4000, 2) * 2 - 1
+    X = torch.rand(4000, 2)
+    X[:,0] = X[:,0]*6.28 - 3.14
+    X[:,1] = X[:,1]*16 - 8
     # A mask to filter samples from the target region.
     tgt_mask = torch.logical_and(
       torch.abs(X[:, 0]) <= 0.05,
@@ -178,3 +186,9 @@ class SuspendedPendulum(Env):
 
     # return X_tgt, X_dec
     return X_dec
+
+
+def F_SuspendedPendulum(x, g, l, m, b, tau):
+  xx_a = x[0] + x[1]*tau
+  xx_b = x[1] + (-(b/m)*x[1] - (g/l)*sp.sin(x[0]))*tau
+  return sp.Matrix([xx_a, xx_b])
