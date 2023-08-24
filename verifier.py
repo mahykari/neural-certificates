@@ -1,76 +1,78 @@
 import logging
-from abc import ABC, abstractmethod
+from abc import ABC
+from functools import reduce
+from typing import Callable
+import pprint
 
 import z3
 import numpy as np
+import sympy as sp
+import torch
 import torch.nn as nn
-from typing import Callable
 
 from envs import Box, Env
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 
 class Verifier(ABC):
   ...
 
 
-def ReLU(x: z3.Real):
-  """Representation of ReLU(x) in Z3."""
-  return z3.If(x > 0, x, 0)
+# Representation of ReLU in SymPy
+ReLU = sp.Function('ReLU')
+
+
+# def ReLU(x: z3.Real):
+#   """Representation of ReLU(x) in Z3."""
+#   return z3.If(x > 0, x, 0)
 
 
 def X(dim):
-  """Representation of a vector named x in Z3."""
-  return z3.RealVector('x', dim)
+  """Representation of a vector named x in SymPy."""
+  return sp.Matrix(
+    [sp.Symbol(f'x_{i}') for i in range(dim)] )
 
 
-def Net(net: nn.Sequential, x):
-  """Representation of a ReLU-activated NN in Z3.
+def Net(net: nn.Sequential, x: sp.Matrix):
+  """Representation of a ReLU-activated NN in SymPy.
   
   Args:
     net: an instance of nn.Sequential with 2*N elements, so that 
     net[2k+1] is *always* an nn.ReLU module and net[2k] is always an 
     nn.Linear module. 
-    x: an instance of np.array.
+    x: a SymPy vector.
   """
   N = len(net)
   W = [net[i].weight.data.numpy() for i in range(0, N, 2)]
   b = [net[i].  bias.data.numpy() for i in range(0, N, 2)]
-
-  # Vectorizing ReLU to use NumPy matrix operations.
-  relu_vec = np.vectorize(ReLU)
-  # Size of x can be determined from net[0].in_features; i.e., number  
-  # of input features in net's first layer.
-  x = np.array(X(net[0].in_features))
+  # Unsqueeze changes a 1D torch.Tensor into a 2D column vector.
+  b = [np.expand_dims(bi, 1) for bi in b]
 
   for Wi, bi in zip(W, b):
-    x = relu_vec(Wi @ x + bi)
-  
+    x = (Wi @ x + bi).applyfunc(ReLU)
   return x 
 
 
-def BoundIn(box: Box):
+def BoundIn(box: Box, x):
   B = []
   dim = len(box.low)
   low = box.low.numpy()
   high = box.high.numpy()
-  x = X(dim)
   B += [x[i] >= low [i] for i in range(dim)]
   B += [x[i] <= high[i] for i in range(dim)]
-  return z3.And(B)
+  return reduce(lambda a, b: a & b, B)
 
 
-def BoundOut(box: Box):
+def BoundOut(box: Box, x):
   B = []
   dim = len(box.low)
   low = box.low.numpy()
   high = box.high.numpy()
-  x = X(dim)
   B += [x[i] < low [i] for i in range(dim)]
   B += [x[i] > high[i] for i in range(dim)]
-  return z3.Or(B)
+  return reduce(lambda a, b: a | b, B)
 
 
 def cex(C, x):
@@ -91,6 +93,51 @@ def cex(C, x):
   else:
     raise RuntimeError('unknown result for SMT query')
 
+
+def sympytoz3(expr, var):
+  """Translate SymPy expression to Z3.
+
+  Args:
+    expr: SymPy expression.
+    var: a dictionary mapping SymPy Symbols to their Z3 equivalents. 
+  """
+  if isinstance(expr, sp.Symbol):
+    return var[expr]
+  if isinstance(expr, sp.Number):
+    return expr
+  if isinstance(expr, sp.Add):
+    acc = sympytoz3(expr.args[0], var)
+    for arg in expr.args[1:]:
+      acc += sympytoz3(arg, var)
+    return acc
+  if isinstance(expr, sp.Mul):
+    acc = sympytoz3(expr.args[0], var)
+    for arg in expr.args[1:]:
+      acc *= sympytoz3(arg, var)
+    return acc
+  if isinstance(expr, sp.And):
+    args = [sympytoz3(arg, var) for arg in expr.args]
+    return z3.And(args)
+  if isinstance(expr, sp.Or):
+    args = [sympytoz3(arg, var) for arg in expr.args]
+    return z3.Or(args)
+  if isinstance(expr, sp.Function) and expr.name == 'ReLU':
+    arg = sympytoz3(expr.args[0], var)
+    return z3.If(arg < 0, 0, arg)
+  if isinstance(expr, sp.GreaterThan):
+    l, r = [sympytoz3(arg, var) for arg in expr.args]
+    return l >= r
+  if isinstance(expr, sp.LessThan):
+    l, r = [sympytoz3(arg, var) for arg in expr.args]
+    return l <= r
+  if isinstance(expr, sp.StrictGreaterThan):
+    l, r = [sympytoz3(arg, var) for arg in expr.args]
+    return l > r
+  if isinstance(expr, sp.StrictLessThan):
+    l, r = [sympytoz3(arg, var) for arg in expr.args]
+    return l < r
+  raise NotImplementedError(type(expr))
+
 # Verifiers are named after their corresponding learners. Concretely, 
 # Verifier_W (where W is a string) corresponds to Learner_W.
 
@@ -105,14 +152,23 @@ class Verifier_Reach_C(Verifier):
     self.F = F
   
   def chk_dec(self):
-    x = X(self.env.dim)
+    x_sp = X(self.env.dim)
+    x_z3 = z3.RealVector('x', self.env.dim)
+    var = {x_sp[i]: x_z3[i] for i in range(self.env.dim)}
     v, vf = z3.Real('v'), z3.Real('vf')
 
     s = z3.Solver()
+    # The lists bound and problem contain SymPy expressions for 
+    # variable bounds and problem constrains.
     bounds, problem = [], []
-    bounds.append(BoundIn(self.env.bnd))
-    bounds.append(BoundOut(self.env.tgt))
-    problem.append(v  == Net(self.cert, x)[0])
-    problem.append(vf == Net(self.cert, self.F(x))[0])
+    bounds.append(BoundIn(self.env.bnd, x_sp))
+    bounds.append(BoundOut(self.env.tgt, x_sp))
+    bounds = [sympytoz3(b, var) for b in bounds]
+    problem.append(
+      v  == sympytoz3( Net(self.cert, x_sp)[0], var) )
+    problem.append(
+      vf == sympytoz3( Net(self.cert, self.F(x_sp))[0], var) )
     problem.append(v <= vf)
-    return cex(bounds + problem, x)
+    logger.debug('bounds='  + pprint.pformat(bounds))
+    logger.debug('problem=' + pprint.pformat(problem))
+    return cex(bounds + problem, x_z3)
