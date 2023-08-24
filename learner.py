@@ -12,15 +12,41 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 
-def reach_nn():
+def nn_cert_2d():
   """Utility function to generate a default Reach certificate for a 
   2D space."""
   return nn.Sequential(
-    nn.Linear(2, 8),
+    nn.Linear(2, 16),
     nn.ReLU(),
-    nn.Linear(8, 4),
+    nn.Linear(16, 1),
+    nn.ReLU()
+  )
+
+
+def nn_abst_2d():
+  """Utility function to generate a default abstraction NN for a 
+  2D space."""
+  return nn.Sequential(
+    nn.Linear(2, 2),
     nn.ReLU(),
-    nn.Linear(4, 1),
+    nn.Linear(2, 2),
+  )
+
+
+def nn_bound_2d():
+  """Utility function to generate a default error bound NN for a 
+  2D space.
+  
+  Note: this network is used to learn the abstraction error 
+  B(x) = || f(x) - A(x) || + eps(x), where f is a transition 
+  function, A is a neural abstraction of f, and eps is a non-negative 
+  error term. Intuitively, B is a tight overapproximation of 
+  || f - A ||.
+  """
+  return nn.Sequential(
+    nn.Linear(2, 2),
+    nn.ReLU(),
+    nn.Linear(2, 1),
     nn.ReLU()
   )
 
@@ -175,3 +201,42 @@ class Learner_Reach_C:
     #   self.chk_tgt(C_tgt)
     #   and self.chk_dec(C_dec) )
     return self.chk_dec(C_dec)
+
+
+def sample_ball(dim: int, n, int=100):
+  """Sampled points from the surface of a unit ball.
+  
+  Args: 
+    dim: dimensions of the ball.
+    n: number of samples.
+  """
+  # Tensor with shape (n, dim), where each element is sampled from 
+  # a Normal(0, 1) distribution.
+  b = torch.randn(n, dim)
+  # L2-norm of each row in b.
+  norm_b = torch.norm(b, dim=1)
+  # The next steps fix the dimensions of norm_b, so that norm_b will 
+  # be of shape (n, dim), where all elements in row i are equal to 
+  # the norm of row i in b. 
+  norm_b = norm_b.unsqueeze(dim=1)
+  norm_b = norm_b.expand(n, dim)
+  return b / norm_b
+
+
+class Learner_Reach_ABC:
+  EPS_DEC = 1e0
+  LR, WeIGHT_DECAY = 3e-3, 1e5
+
+  def __init__(
+      self, 
+      env: Env, 
+      abst: nn.Module,
+      bound: nn.Module,
+      cert: nn.Module):
+    self.env = env 
+    self.abst = abst
+    self.cert = cert 
+    self.bound = bound
+  
+  def fit(self, C_abs, C_dec):
+    pass 

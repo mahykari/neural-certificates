@@ -6,7 +6,7 @@ from envs import Spiral, F_Spiral
 from learner import Learner_Reach_C
 from verifier import Verifier_Reach_C
 
-from learner import reach_nn
+from learner import nn_cert_2d
 
 
 MAX_CEGIS_ITER = 10
@@ -30,7 +30,7 @@ def find_learner(env, C_tgt, C_dec):
   # TODO. Check if the internal training loop can be removed.
   for i in range(MAX_TRAIN_ITER):
     logger.debug('Next learning iter.')
-    learner = Learner_Reach_C(env, reach_nn())
+    learner = Learner_Reach_C(env, nn_cert_2d())
     learner.fit(C_tgt, C_dec)
     if learner.chk(C_tgt, C_dec):
       logger.debug(f'Learner found at iter. {i}.')
@@ -50,6 +50,9 @@ def main():
   for _ in range(MAX_CEGIS_ITER):
     logger.info(f'Next CEGIS iter. |C_dec|={len(C_dec)}')
     learner = find_learner(env, C_tgt, C_dec)
+    if not learner:
+      raise RuntimeError(
+        f'no learner found after {MAX_TRAIN_ITER} iterations')
     verifier = Verifier_Reach_C(learner.cert, env, F_Spiral)
     cex_dec = verifier.chk_dec()
 
