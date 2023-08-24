@@ -6,4 +6,4 @@ scipy
 notebook
 z3-solver
 scikit-learn
-
+sympy
