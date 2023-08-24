@@ -29,6 +29,7 @@ logger.setLevel(logging.DEBUG)
 def find_learner(env, C_tgt, C_dec): 
   # TODO. Check if the internal training loop can be removed.
   for i in range(MAX_TRAIN_ITER):
+    logger.debug('Next learning iter.')
     learner = Learner_Reach_C(env, reach_nn())
     learner.fit(C_tgt, C_dec)
     if learner.chk(C_tgt, C_dec):
@@ -51,12 +52,13 @@ def main():
     learner = find_learner(env, C_tgt, C_dec)
     verifier = Verifier_Reach_C(learner.cert, env, F_Spiral)
     cex_dec = verifier.chk_dec()
-    
-    logger.debug(
-      'CEGIS. cex_dec=[' +
-      ', '.join(map(lambda x: f'{x:10.6f}', cex_dec)) + ']' ) 
+
     if not cex_dec:
+      logger.info('No new CEx.')
       break
+    logger.debug(
+      'CEGIS. Decrease CEx=[' +
+      ', '.join(map(lambda x: f'{x:10.6f}', cex_dec)) + ']' ) 
     C_dec = torch.vstack([C_dec, torch.Tensor(cex_dec)])
 
 
