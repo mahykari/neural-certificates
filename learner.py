@@ -34,7 +34,7 @@ def reach_nn():
 # NN for Abstraction (A) and Certificate (C). 
 
 class Learner_Reach_C:
-  EPS_TGT, EPS_DEC = 3e-1, 1e-2
+  EPS_TGT, EPS_DEC = 3e-1, 1e0
   LR, WEIGHT_DECAY = 3e-3, 1e-5
 
   def __init__(
