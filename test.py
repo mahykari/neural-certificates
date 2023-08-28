@@ -83,7 +83,7 @@ class TestEnvironments(unittest.TestCase):
   
   def test_suspended_pendulum(self):
     pendulum = SuspendedPendulum()
-    x = torch.Tensor([-3.14, 7])
+    x = torch.Tensor([-3.14, 4])
     for _ in range(100):
       x = pendulum.f(x)
       self.assertLessEqual(torch.abs(x[0]), 3.14)
