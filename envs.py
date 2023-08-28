@@ -157,8 +157,7 @@ class SuspendedPendulum(Env):
 
     xx_a = x[0] + x[1]*tau
     xx_b = x[1] + (-(b/m)*x[1] - (g/l)*torch.sin(x[0]))*tau
-
-    return torch.Tensor([xx_a, xx_b])
+    return torch.hstack([xx_a, xx_b])
 
   # Alias for nxt, for simpler notation
   f = nxt
