@@ -27,9 +27,9 @@ def nn_abst_2d():
   """Utility function to generate a default abstraction NN for a 
   2D space."""
   return nn.Sequential(
-    nn.Linear(2, 2),
+    nn.Linear(2, 16),
     nn.ReLU(),
-    nn.Linear(2, 2),
+    nn.Linear(16, 2),
   )
 
 
@@ -44,9 +44,9 @@ def nn_bound_2d():
   || f - A ||.
   """
   return nn.Sequential(
-    nn.Linear(2, 2),
+    nn.Linear(2, 16),
     nn.ReLU(),
-    nn.Linear(2, 1),
+    nn.Linear(16, 1),
     nn.ReLU()
   )
 
@@ -203,25 +203,28 @@ class Learner_Reach_C:
     return self.chk_dec(C_dec)
 
 
-def sample_ball(dim: int, n, int=100):
+def sample_ball(dim: int, n_samples, int=100):
   """Sampled points from the surface of a unit ball.
   
   Args: 
     dim: dimensions of the ball.
-    n: number of samples.
+    n_samples: number of samples.
   """
-  # Tensor with shape (n, dim), where each element is sampled from 
-  # a Normal(0, 1) distribution.
-  b = torch.randn(n, dim)
+  # P_S is a Tensor with shape (n, dim), where each element is 
+  # sampled from the surface of a unit ball.
+  points = torch.rand(n_samples, dim)*2 - 1
   # L2-norm of each row in b.
-  norm_b = torch.norm(b, dim=1)
-  # The next steps fix the dimensions of norm_b, so that norm_b will 
+  # The next steps fix the dimensions of norms, so that norm_b will 
   # be of shape (n, dim), where all elements in row i are equal to 
   # the norm of row i in b. 
-  norm_b = norm_b.unsqueeze(dim=1)
-  norm_b = norm_b.expand(n, dim)
-  return b / norm_b
-
+  norms = torch.norm(points, dim=1)
+  norms = norms.unsqueeze(dim=1)
+  norms = norms.expand(n_samples, dim)
+  # Points should be re-scaled to have norm 1. Afterwards, we 
+  # re-scale again to a random values. 
+  points /= norms
+  points *= torch.rand(n_samples, 1)
+  return points 
 
 class Learner_Reach_ABC:
   EPS_DEC = 1e0
