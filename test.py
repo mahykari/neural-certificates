@@ -3,8 +3,11 @@ import unittest
 import z3 
 import numpy as np
 import sympy as sp
+import torch
 import torch.nn as nn
 
+from envs import SuspendedPendulum
+from envs import F_SuspendedPendulum
 from verifier import X, ReLU, Net, sympytoz3
 
 
@@ -75,6 +78,21 @@ class TestSymPyToZ3Translations(unittest.TestCase):
       net_sp[0],
       {x_sp[i]: x_z3[i] for i in range(3)} )
 
+
+class TestEnvironments(unittest.TestCase):
+  
+  def test_suspended_pendulum(self):
+    pendulum = SuspendedPendulum()
+    x = torch.Tensor([-3.14, 7])
+    for _ in range(100):
+      x = pendulum.f(x)
+      self.assertLessEqual(torch.abs(x[0]), 3.14)
+      self.assertLessEqual(torch.abs(x[1]), 8)
+  
+  def test_f_suspended_pendulum(self):
+    x = sp.Matrix(sp.symbols('x_0 x_1'))
+    pendulum = SuspendedPendulum()
+    F_SuspendedPendulum(x)
 
 if __name__ == '__main__':
     unittest.main()

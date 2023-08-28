@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 
 import numpy as np
+import sympy as sp
 import torch 
 
 
@@ -71,7 +72,7 @@ class Spiral(Env):
     high=torch.Tensor([ 0.05,  0.05]),
   )
 
-  def __init__(self, alpha: float=0.5, beta: float=0.5):
+  def __init__(self, alpha: float=ALPHA, beta: float=BETA):
     self.alpha = alpha 
     self.beta = beta
 
@@ -117,3 +118,70 @@ def F_Spiral(x, alpha=Spiral.ALPHA, beta=Spiral.BETA):
     [- beta, alpha] 
   ] )
   return A @ x
+
+
+class SuspendedPendulum(Env):
+  """A simple 2-dimensional pendulum, suspended freely."""
+  # g_ = gravitational acceleration, l_ = rod length, m_ = bob mass,
+  # b_ = damping coefficient
+  g_, l_, m_, b_ = 9.8, 1, 1, 0.2
+  tau_ = 0.01 # Sampling times
+  dim = 2
+
+  bnd = Box(
+    # The bounds on the angular velocity are too pessimistic for now
+    low=torch.Tensor([-3.14, -8]),
+    high=torch.Tensor([3.14, 8]),
+  )
+
+  tgt = Box(
+    low=torch.Tensor([-0.05, -0.05]),
+    high=torch.Tensor([0.05, 0.05]),
+  )
+
+  def __init__(
+      self, 
+      g: float=g_, 
+      l: float=l_,
+      m: float=m_,
+      b: float=b_):
+    self.g = g
+    self.l = l
+    self.m = m
+    self.b = b
+
+  def nxt(self, x: torch.Tensor):
+    """The transition function f: X -> X."""
+    g, l, m, b = self.g, self.l, self.m, self.b
+    tau = self.tau_
+
+    xx_a = x[0] + x[1]*tau
+    xx_b = x[1] + (-(b/m)*x[1] - (g/l)*torch.sin(x[0]))*tau
+
+    return torch.Tensor([xx_a, xx_b])
+
+  # Alias for nxt, for simpler notation
+  f = nxt
+
+  def sample(self):
+    """Returns a tuple of samples from different regions of the state
+    space.
+
+    Returns:
+      (X_dec, ): X_dec are points sampled from the decrease
+      (everywhere outside target) space.
+    """
+    # Samples in S are drawn from Normal(0, 1). They are then scaled 
+    # so that all angles are in range [-pi, pi] and all angular 
+    # velocities are in range [-4, 4].
+    S = torch.randn(4000, 2)
+    S *= torch.Tensor([6.28, 8])
+    S -= torch.Tensor([3.14, 4])
+    
+    return S
+
+
+def F_SuspendedPendulum(x, g=9.8, l=1, m=1, b=0.2, tau=0.01):
+  xx_a = x[0] + x[1]*tau
+  xx_b = x[1] + (-(b/m)*x[1] - (g/l)*sp.sin(x[0]))*tau
+  return sp.Matrix([xx_a, xx_b])
