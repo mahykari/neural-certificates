@@ -171,24 +171,17 @@ class SuspendedPendulum(Env):
       (X_dec, ): X_dec are points sampled from the decrease
       (everywhere outside target) space.
     """
-    # Not all samples will be outside the target region, but the
-    # ratio of samples from this region will be negligible.
-    X = torch.rand(4000, 2)
-    X[:,0] = X[:,0]*6.28 - 3.14
-    X[:,1] = X[:,1]*16 - 8
-    # A mask to filter samples from the target region.
-    tgt_mask = torch.logical_and(
-      torch.abs(X[:, 0]) <= 0.05,
-      torch.abs(X[:, 1]) <= 0.05,
-    )
-    # X_tgt = torch.rand(250, 2)*0.1 - 0.05
-    X_dec = X[~tgt_mask]
-
-    # return X_tgt, X_dec
-    return X_dec
+    # Samples in S are drawn from Normal(0, 1). They are then scaled 
+    # so that all angles are in range [-pi, pi] and all angular 
+    # velocities are in range [-4, 4].
+    S = torch.randn(4000, 2)
+    S *= torch.Tensor([6.28, 8])
+    S -= torch.Tensor([3.14, 4])
+    
+    return S
 
 
-def F_SuspendedPendulum(x, g, l, m, b, tau):
+def F_SuspendedPendulum(x, g=9.8, l=1, m=1, b=0.2, tau=0.01):
   xx_a = x[0] + x[1]*tau
   xx_b = x[1] + (-(b/m)*x[1] - (g/l)*sp.sin(x[0]))*tau
   return sp.Matrix([xx_a, xx_b])
