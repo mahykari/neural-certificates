@@ -14,11 +14,13 @@ logger.setLevel(logging.DEBUG)
 
 def nn_cert_2d():
   """Utility function to generate a default Reach certificate for a 
-  2D space."""
+  2D space. Zeroing bias terms and using ReLU activation on the last 
+  layer enforces Nonnegativity and Target conditions.
+  """
   return nn.Sequential(
-    nn.Linear(2, 16),
+    nn.Linear(2, 16, bias=False),
     nn.ReLU(),
-    nn.Linear(16, 1),
+    nn.Linear(16, 1, bias=False),
     nn.ReLU()
   )
 
