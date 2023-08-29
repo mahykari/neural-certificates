@@ -112,7 +112,7 @@ class Learner_Reach_C:
     optimizer = optim.Adam(
       self.cert.parameters(), lr=3.3e-3, weight_decay=1e-5)
 
-    # DataLoader's simplify using mini-batches in the training loop.
+    # DataLoaders simplify using mini-batches in the training loop.
     tgt_ld = D.DataLoader(C_tgt, batch_size=BATSZ_TGT, shuffle=True)
     dec_ld = D.DataLoader(C_dec, batch_size=BATSZ_DEC, shuffle=True)
 
@@ -135,7 +135,9 @@ class Learner_Reach_C:
         loss.backward()
         optimizer.step()
       if e % N_EPOCH == 0:
-        logger.debug(f'Epoch={e:>4}. Loss={epoch_loss:10.6f}.')
+        logger.debug(
+          f'Epoch={e:>4}. '
+          + f'Loss={epoch_loss/N_BATCH:10.6f}.')
 
   def _cert_loss_fn(self, X_tgt, X_dec):
     """Aggregate loss function for the certificate NN. 
@@ -228,20 +230,83 @@ def sample_ball(dim: int, n_samples, int=100):
   points *= torch.rand(n_samples, 1)
   return points 
 
-class Learner_Reach_ABC:
+class Learner_Reach_ABV:
   EPS_DEC = 1e0
   LR, WeIGHT_DECAY = 3e-3, 1e5
 
   def __init__(
       self, 
       env: Env, 
-      abst: nn.Module,
-      bound: nn.Module,
-      cert: nn.Module):
+      A: nn.Module,
+      B: nn.Module,
+      V: nn.Module):
     self.env = env 
-    self.abst = abst
-    self.cert = cert 
-    self.bound = bound
+    self.A = A  # Abstraction NN.
+    self.B = B  # Bound NN.
+    self.V = V  # Certificate NN. 
   
-  def fit(self, C_abs, C_dec):
-    pass 
+  def fit(self, S):
+    N_EPOCH, N_BATCH = 2048, 50
+    LR, WEIGHT_DECAY = 3e-3, 1e-5
+    
+    state_ld = D.DataLoader(
+      S, batch_size= len(S) // N_BATCH, shuffle=True)
+
+
+    optimizer = optim.Adam(
+        list(self.A.parameters()) 
+        + list(self.B.parameters()) 
+        + list(self.V.parameters()),
+      lr=LR,
+      weight_decay=WEIGHT_DECAY
+    )
+    
+    for e in range(N_EPOCH+1):
+      epoch_loss = 0
+      ball = sample_ball(2, 100)
+      state_it = iter(state_ld)
+      for _ in range(N_BATCH):
+        states = next(state_it)
+        optimizer.zero_grad()
+        loss = self.loss_fn(ball, states)
+        epoch_loss += loss.item()
+        loss.backward()
+        optimizer.step()
+      if e % (N_EPOCH >> 2) == 0:
+        logger.debug(
+          f'-- FIT_CERT. Epoch {e:>5}. '
+          + f'Loss={epoch_loss/N_BATCH:>16.6f}')
+
+  def loss_abst(self, S):
+    f_vec = torch.vmap(self.env.f)
+    # Err = || abst(X) - f(X) ||. Err should be casted into a 2D 
+    # Tensor with dimensions Nx1, so that its dimensions match B(S).
+    err = torch.norm(self.A(S) - f_vec(S), dim=1)
+    err = torch.unsqueeze(err, dim=1)
+    return torch.mean( torch.relu(err - self.B(S)) )
+
+  # Loss_bound enforces B(s) to be close to zero for all s. 
+  # TODO. Check if this function is needed at all.
+  def loss_bound(self, S):
+    return torch.mean(self.B(S))
+
+  def loss_cert(self, ball, S):
+    def loss_cert_state(s):
+      # Loss_cert for a single state s. For each s, we construct a 
+      # sample ball with center A(s) and radius B(s); we do so by 
+      # rescaling and shifting samples in ball.
+      return torch.sum(
+        torch.relu(
+          self.V(self.A(s) + self.B(s)*ball) - self.V(s) + 1 ) )
+    return torch.mean(
+      torch.vmap(loss_cert_state)(S) )
+
+  def loss_fn(self, ball, S):
+    return (
+      self.loss_abst(S)
+      # + self.loss_bound(S)
+      + self.loss_cert(ball, S) )
+  
+  def chk(self, S):
+    # TODO. Update this check with actual values.
+    return True
