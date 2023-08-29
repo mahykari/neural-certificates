@@ -39,19 +39,23 @@ def Net(net: nn.Sequential, x: sp.Matrix):
   """Representation of a ReLU-activated NN in SymPy.
   
   Args:
-    net: an instance of nn.Sequential with 2*N elements, so that 
-    net[2k+1] is *always* an nn.ReLU module and net[2k] is always an 
-    nn.Linear module. 
-    x: a SymPy vector.
+    net: an instance of nn.Sequential. We assume all layers are 
+    instances of either nn.Linear (fully connected feed-forward) or 
+    nn.ReLU (activation functions).
   """
-  N = len(net)
-  W = [net[i].weight.data.numpy() for i in range(0, N, 2)]
-  b = [net[i].  bias.data.numpy() for i in range(0, N, 2)]
-  # Unsqueeze changes a 1D torch.Tensor into a 2D column vector.
-  b = [np.expand_dims(bi, 1) for bi in b]
-
-  for Wi, bi in zip(W, b):
-    x = (Wi @ x + bi).applyfunc(ReLU)
+  for layer in net:
+    if isinstance(layer, nn.Linear):
+      W = layer.weight.data.numpy()
+      # If the layer has no bias, we simply set bias to 0.
+      # Expand_dims changes a 1D vector into a 2D column vector.
+      b = (
+        layer.bias.data.numpy() 
+        if layer.bias is not None 
+        else np.zeros(len(W)) )
+      b = np.expand_dims(b, 1) 
+      x = W @ x + b
+    if isinstance(layer, nn.ReLU):
+      x = x.applyfunc(ReLU)
   return x 
 
 

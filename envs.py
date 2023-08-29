@@ -157,8 +157,7 @@ class SuspendedPendulum(Env):
 
     xx_a = x[0] + x[1]*tau
     xx_b = x[1] + (-(b/m)*x[1] - (g/l)*torch.sin(x[0]))*tau
-
-    return torch.Tensor([xx_a, xx_b])
+    return torch.hstack([xx_a, xx_b])
 
   # Alias for nxt, for simpler notation
   f = nxt
@@ -168,8 +167,8 @@ class SuspendedPendulum(Env):
     space.
 
     Returns:
-      (X_dec, ): X_dec are points sampled from the decrease
-      (everywhere outside target) space.
+      S: points sampled within the boundaries of the system, drawn 
+      from a normal distribution.
     """
     # Samples in S are drawn from Normal(0, 1). They are then scaled 
     # so that all angles are in range [-pi, pi] and all angular 
