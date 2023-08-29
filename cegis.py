@@ -6,7 +6,7 @@ from envs import (
   Spiral, F_Spiral,
   SuspendedPendulum, F_SuspendedPendulum)
 from learner import Learner_Reach_C, Learner_Reach_ABV
-from verifier import Verifier_Reach_C
+from verifier import Verifier_Reach_C, Verifier_Reach_ABV
 
 from learner import (
   nn_abst_2d,
@@ -59,8 +59,26 @@ def main():
     if not learner:
       raise RuntimeError(
         f'no learner found after {MAX_TRAIN_ITER} iterations')
-    # TODO. Implement Verifier_Reach_ABV.
-    # verifier = Verifier_Reach_C(learner.cert, env, F_Spiral)
+
+    verifier = Verifier_Reach_ABV(
+      learner.A,
+      learner.B,
+      learner.V, 
+      env, 
+      F_SuspendedPendulum)
+    cex_abst = verifier.chk_abst()
+    if not cex_abst:
+      logger.info('No new CEx for Abstraction.')
+      break
+    logger.debug(
+      'CEGIS. Abstraction CEx=[' +
+      ', '.join(map(lambda x: f'{x:10.6f}', cex_abst)) + ']' )
+    # TODO. Call the rest of cex_... methods.
+    # TODO. Add new samples to S.
+    
+    #################################################################
+    # STALE CODE! 
+    #################################################################
     # cex_dec = verifier.chk_dec()
 
     # if not cex_dec:
