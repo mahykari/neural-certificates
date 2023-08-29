@@ -167,8 +167,8 @@ class SuspendedPendulum(Env):
     space.
 
     Returns:
-      (X_dec, ): X_dec are points sampled from the decrease
-      (everywhere outside target) space.
+      S: points sampled within the boundaries of the system, drawn 
+      from a normal distribution.
     """
     # Samples in S are drawn from Normal(0, 1). They are then scaled 
     # so that all angles are in range [-pi, pi] and all angular 
