@@ -8,7 +8,7 @@ import torch.nn as nn
 
 from envs import SuspendedPendulum
 from envs import F_SuspendedPendulum
-from verifier import X, ReLU, Net, sympytoz3
+from verifier import X, ReLU, Net, sympy_to_z3
 
 
 class TestSymPyUtilFuncs(unittest.TestCase):
@@ -56,7 +56,7 @@ class TestSymPyToZ3Translations(unittest.TestCase):
     # A will, by default, be a column vector.
     A = sp.Matrix([1, 2, 3])
     assert A.shape == (3, 1)
-    z3expr = sympytoz3(
+    z3expr = sympy_to_z3(
       (A.T @ x_sp)[0], 
       {x_sp[i]: x_z3[i] for i in range(3)} )
     self.assertEqual(z3expr, x_z3[0] + 2*x_z3[1] + 3*x_z3[2])
@@ -74,7 +74,7 @@ class TestSymPyToZ3Translations(unittest.TestCase):
     x_sp = X(3)
     x_z3 = z3.RealVector('x', 3)
     net_sp = Net(net, X(3))
-    net_z3 = sympytoz3(
+    net_z3 = sympy_to_z3(
       net_sp[0],
       {x_sp[i]: x_z3[i] for i in range(3)} )
 
