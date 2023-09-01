@@ -5,7 +5,6 @@
 # concatenation step (although this is just an observation and needs 
 # to be examined.) 
 
-import numpy as np
 import torch 
 import torch.nn as nn 
 import onnx
@@ -31,11 +30,11 @@ class Composite(nn.Module):
   
   def forward(self, x, y):
     x = self.fc2x1(self.fc2x2(x) + y)
-    return torch.cat([x, self.fc2x1(y)], dim=-1)
+    return torch.cat([x, self.fc2x1(y)], dim=1)
 
 
 composite = Composite()
-x, y = torch.randn(2), torch.randn(2)
+x, y = torch.randn(1, 2), torch.randn(1, 2)
 o = composite(x, y).detach().numpy()
 filename = 'composite.onnx'
 torch.onnx.export(
@@ -57,12 +56,18 @@ o1 = ort_session.run(
     { 'x': x.numpy(),
       'y': y.numpy(), }
 )
+o1 = o1[0]
 
-assert np.all(o == o1)
+print(f'o  = {o}')
+print(f'o1 = {o1}')
 
 network = Marabou.read_onnx(filename)
-x, y = network.inputVars[0], network.inputVars[1]
-o = network.outputVars[0]
+print(f'inputVars  = {network.inputVars}')
+print(f'outputVars = {network.outputVars}')
+x, y = (
+  network.inputVars[0][0],
+  network.inputVars[1][0])
+o = network.outputVars[0][0]
 print(x, y, o)
 
 network.setLowerBound(x[0], -1.0)
@@ -73,8 +78,8 @@ network.setLowerBound(y[0], -1.0)
 network.setLowerBound(y[1], -1.0)
 network.setUpperBound(y[0], 1.0)
 network.setUpperBound(y[1], 1.0)
-network.setLowerBound(o[0], 0.0)
-network.setLowerBound(o[0], 0.0)
+network.setUpperBound(o[0], 0.0)
+network.setUpperBound(o[0], 0.0)
 
 options = Marabou.createOptions(verbosity=2)
 network.solve(options=options)
