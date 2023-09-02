@@ -5,6 +5,8 @@
 # concatenation step (although this is just an observation and needs 
 # to be examined.) 
 
+from pathlib import Path
+
 import torch 
 import torch.nn as nn 
 import onnx
@@ -62,6 +64,10 @@ print(f'o  = {o}')
 print(f'o1 = {o1}')
 
 network = Marabou.read_onnx(filename)
+
+# Removing ONNX file 
+Path(filename).unlink()
+
 print(f'inputVars  = {network.inputVars}')
 print(f'outputVars = {network.outputVars}')
 x, y = (
@@ -81,5 +87,12 @@ network.setUpperBound(y[1], 1.0)
 network.setUpperBound(o[0], 0.0)
 network.setUpperBound(o[0], 0.0)
 
-options = Marabou.createOptions(verbosity=2)
+options = Marabou.createOptions(verbosity=2, tighteningStrategy="sbt")
+network.solve(options=options)
+
+print('\n' + '#' * 80)
+print('# Setting tighteningStrategy to "none"')
+print('#' * 80 + '\n')
+
+options = Marabou.createOptions(verbosity=2, tighteningStrategy="none")
 network.solve(options=options)
