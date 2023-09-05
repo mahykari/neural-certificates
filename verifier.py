@@ -344,14 +344,14 @@ class Verifier_Reach_ABV(Verifier):
     x, y = torch.randn(1, 2), torch.randn(1, 2)
     o = abv(x, y)
 
-    filename = 'abv.onnx'
+    filename = 'marabou_drafts/abv.onnx'
     torch.onnx.export(
       abv, (x, y), filename,
       input_names=['x', 'y'],
       output_names=['o'])
 
     network = Marabou.read_onnx(filename)
-    Path(filename).unlink()
+    # Path(filename).unlink()
 
     x, y = network.inputVars[0][0], network.inputVars[1][0]
     o = network.outputVars[0][0]
@@ -387,6 +387,8 @@ class Verifier_Reach_ABV(Verifier):
     network.setUpperBound(o[1], 0.0)
     network.setLowerBound(o[0], -1e3)
     network.setLowerBound(o[1], -1e3)
+
+    network.saveQuery('marabou_drafts/abv-query.txt')
     options = Marabou.createOptions(
       verbosity=0, tighteningStrategy='sbt')
     chk, vals, _stats = network.solve(options=options)
