@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 import sympy as sp
-import torch 
+import torch
 
 
 class Box:
@@ -24,18 +24,18 @@ class Box:
 
 
 class Env(ABC):
-  """Generic base class for all defined environments. 
+  """Generic base class for all defined environments.
   
   *IMPORTANT*: All defined environments should inherit from this 
   class.
   """
-  
+
   @property
   @abstractmethod
   def dim(self):
     """Number of dimensions of the environment."""
     ...
-  
+
   @property
   @abstractmethod
   def bnd(self) -> Box:
@@ -50,7 +50,7 @@ class Env(ABC):
 
   @property
   @abstractmethod
-  def f(self, _):
+  def f(self, *args):
     """State transition function."""
     ...
 
@@ -59,7 +59,7 @@ class Spiral(Env):
   ALPHA, BETA = 0.5, 0.5
   """A simple 2-dimensional dynamical system with a spiral 
   trajectory."""
-  
+
   dim = 2
 
   bnd = Box(
@@ -73,50 +73,40 @@ class Spiral(Env):
   )
 
   def __init__(self, alpha: float=ALPHA, beta: float=BETA):
-    self.alpha = alpha 
+    self.alpha = alpha
     self.beta = beta
 
   def nxt(self, x: torch.Tensor):
     """The transition function f: X -> X."""
     a, b = self.alpha, self.beta
     A = torch.Tensor([
-      [ a,  b], 
-      [-b,  a] 
+      [ a,  b],
+      [-b,  a]
     ])
 
     return A @ x
 
   # Alias for nxt, for simpler notation
   f = nxt
-  
-  def sample(self):
-    """Returns a tuple of samples from different regions of the state 
-    space.
-    
-    Returns:
-      (X_dec, ): X_dec are points sampled from the decrease 
-      (everywhere outside target) space. 
-    """
-    # Not all samples will be outside the target region, but the 
-    # ratio of samples from this region will be negligible.
-    X = torch.rand(4000, 2)*2 - 1
-    # A mask to filter samples from the target region.
-    tgt_mask = torch.logical_and(
-        torch.abs(X[:,0]) <= 0.05,
-        torch.abs(X[:,1]) <= 0.05,
-    )
-    # X_tgt = torch.rand(250, 2)*0.1 - 0.05
-    X_dec = X[~tgt_mask]
 
-    # return X_tgt, X_dec
-    return X_dec
+  @staticmethod
+  def sample():
+    """Returns a tuple of samples from different regions of the state
+    space.
+
+    Returns:
+      (X_dec, ): X_dec are points sampled from the decrease
+      (everywhere outside target) space.
+    """
+    S = torch.randn(4000, 2)
+    return S
 
 
 def F_Spiral(x, alpha=Spiral.ALPHA, beta=Spiral.BETA):
-  A = np.array( [
-    [ alpha,  beta], 
-    [- beta, alpha] 
-  ] )
+  A = np.array([
+    [ alpha,  beta],
+    [- beta, alpha]
+  ])
   return A @ x
 
 
@@ -140,11 +130,11 @@ class SuspendedPendulum(Env):
   )
 
   def __init__(
-      self, 
-      g: float=g_, 
-      l: float=l_,
-      m: float=m_,
-      b: float=b_):
+      self,
+      g: float = g_,
+      l: float = l_,
+      m: float = m_,
+      b: float = b_):
     self.g = g
     self.l = l
     self.m = m
@@ -162,7 +152,8 @@ class SuspendedPendulum(Env):
   # Alias for nxt, for simpler notation
   f = nxt
 
-  def sample(self):
+  @staticmethod
+  def sample():
     """Returns a tuple of samples from different regions of the state
     space.
 
@@ -170,13 +161,12 @@ class SuspendedPendulum(Env):
       S: points sampled within the boundaries of the system, drawn 
       from a normal distribution.
     """
-    # Samples in S are drawn from Normal(0, 1). They are then scaled 
-    # so that all angles are in range [-pi, pi] and all angular 
+    # Samples in S are drawn from Normal(0, 1). They are then scaled
+    # so that all angles are in range [-pi, pi] and all angular
     # velocities are in range [-4, 4].
     S = torch.randn(4000, 2)
-    S *= torch.Tensor([6.28, 8])
-    S -= torch.Tensor([3.14, 4])
-    
+    S *= torch.Tensor([3.14/3, 4/3])
+
     return S
 
 

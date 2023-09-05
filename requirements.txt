@@ -7,3 +7,8 @@ notebook
 z3-solver
 scikit-learn
 sympy
+pysmt
+onnx
+onnxruntime
+# TODO. Try to remove this package and use our own build.
+maraboupy
