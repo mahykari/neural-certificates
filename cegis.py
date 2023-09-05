@@ -76,7 +76,7 @@ def main():
         'CEGIS. Decrease CEx=[' +
         ', '.join(map(lambda x: f'{x:10.6f}', cex_dec)) + ']')
       cex_dec = torch.randn(N // 10, env.dim) + torch.Tensor(cex_dec)
-    S = torch.vstack([S, cex_dec])
+      S = torch.vstack([S, cex_dec])
 
     logger.info('CEGIS. Checking Abstraction condition ...')
     cex_abst = verifier.chk_abst()
@@ -87,7 +87,7 @@ def main():
         'CEGIS. Abstraction CEx=[' +
         ', '.join(map(lambda x: f'{x:10.6f}', cex_abst)) + ']')
       cex_abst = torch.randn(N // 10, env.dim) + torch.Tensor(cex_abst)
-    S = torch.vstack([S, cex_abst])
+      S = torch.vstack([S, cex_abst])
 
 
 if __name__ == '__main__':
