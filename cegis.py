@@ -11,6 +11,7 @@ from verifier import (
   Verifier_Reach_C,
   Verifier_Reach_ABV_Marabou,
   Verifier_Reach_ABV_Z3,
+  Verifier_Reach_ABV_CVC5,
 )
 
 from learner import (
@@ -49,6 +50,7 @@ VERIFIERS = {
   'ABV': {
     'Marabou': Verifier_Reach_ABV_Marabou,
     'Z3': Verifier_Reach_ABV_Z3,
+    'CVC5': Verifier_Reach_ABV_CVC5,
   },
 }
 
