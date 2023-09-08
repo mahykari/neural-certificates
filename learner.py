@@ -19,12 +19,18 @@ def nn_cert_2d():
   2D space. Zeroing bias terms and using ReLU activation on the last 
   layer enforces Nonnegativity and Target conditions.
   """
-  return nn.Sequential(
-    nn.Linear(2, 16, bias=False),
+  net = nn.Sequential(
+    nn.Linear(2, 16),
     nn.ReLU(),
-    nn.Linear(16, 1, bias=False),
+    nn.Linear(16, 1),
     nn.ReLU()
   )
+
+  with torch.no_grad():
+    net[0].bias = nn.Parameter(torch.zeros_like(net[0].bias))
+    net[2].bias = nn.Parameter(torch.zeros_like(net[2].bias))
+
+  return net
 
 
 def nn_abst_2d():
