@@ -1,11 +1,16 @@
+# Learning
 torch
-gymnasium
 numpy
 matplotlib
 scipy
 notebook
-z3-solver
 scikit-learn
+gymnasium
+
+# Solvers
+dreal
+z3-solver
+cvc5
 sympy
 pysmt
 onnx
