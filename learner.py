@@ -14,26 +14,22 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 
-def nn_cert_2d():
+def nn_V_2d():
   """Utility function to generate a default Reach certificate for a 
   2D space. Zeroing bias terms and using ReLU activation on the last 
   layer enforces Nonnegativity and Target conditions.
   """
   net = nn.Sequential(
-    nn.Linear(2, 16),
+    nn.Linear(2, 16, bias=False),
     nn.ReLU(),
-    nn.Linear(16, 1),
+    nn.Linear(16, 1, bias=False),
     nn.ReLU()
   )
-
-  with torch.no_grad():
-    net[0].bias = nn.Parameter(torch.zeros_like(net[0].bias))
-    net[2].bias = nn.Parameter(torch.zeros_like(net[2].bias))
 
   return net
 
 
-def nn_abst_2d():
+def nn_A_2d():
   """Utility function to generate a default abstraction NN for a 
   2D space."""
   return nn.Sequential(
@@ -43,7 +39,7 @@ def nn_abst_2d():
   )
 
 
-def nn_bound_2d():
+def nn_B_2d():
   """Utility function to generate a default error bound NN for a 
   2D space.
   
@@ -79,7 +75,7 @@ class Learner(ABC):
     ...
 
 
-class Learner_Reach_C:
+class Learner_Reach_V:
   EPS_TGT, EPS_DEC = 3e-1, 1e0
   LR, WEIGHT_DECAY = 3e-3, 1e-5
 
@@ -93,128 +89,76 @@ class Learner_Reach_C:
     #   nn.ReLU(),
     #   ... )
     self.env = env
-    self.cert = models[0]
+    self.V = models[0]
 
-  def fit(self, C_tgt, C_dec):
-    """Fits cert based on a predefined loss function.
-
-    The fitting process is as follows:
-      ...
-      <?>. The certificate NN is trained.
-      ...
+  def fit(self, S):
+    """Fits V based on a predefined loss function.
 
     Args:
-      C_tgt: the 'set' (torch.Tensor) of training target states. This 
-      argument is labelled as C_tgt, as it is utilized to learn the 
-      Target condition.
-      C_dec: the set of training non-target states. This argument is 
-      labelled as C_dec in a fashion similar to C_tgt. 
+      S: a set of sampled points from the state space.
     """
-    self._fit_cert(C_tgt, C_dec)
+    # N_EPOCH, N_BATCH = 2048, 50
+    N_EPOCH, N_BATCH = 512, 50  # For debugging purposes
+    LR, WEIGHT_DECAY = 3e-3, 1e-5
 
-  def _fit_cert(self, C_tgt, C_dec):
-    N_EPOCH, N_BATCH = 512, 40
-    BATSZ_TGT, BATSZ_DEC = (
-      len(C_tgt) // N_BATCH, len(C_dec) // N_BATCH)
-    
-    # Adam optimizer. `lr` and `weight_decay` are the learning rate 
-    # and the weight regularization parameter, respectively.
+    state_ld = D.DataLoader(
+      S, batch_size=len(S) // N_BATCH, shuffle=True)
+
     optimizer = optim.Adam(
-      self.cert.parameters(), lr=3.3e-3, weight_decay=1e-5)
+      self.V.parameters(),
+      lr=LR, weight_decay=WEIGHT_DECAY
+    )
 
-    # DataLoaders simplify using mini-batches in the training loop.
-    tgt_ld = D.DataLoader(C_tgt, batch_size=BATSZ_TGT, shuffle=True)
-    dec_ld = D.DataLoader(C_dec, batch_size=BATSZ_DEC, shuffle=True)
-
-    for e in range(N_EPOCH+1):
-      tgt_it, dec_it = iter(tgt_ld), iter(dec_ld)
+    for e in range(N_EPOCH + 1):
       epoch_loss = 0
+      state_it = iter(state_ld)
       for _ in range(N_BATCH):
-        # Training each batch consists of the following steps:
-        #   * Setup: fetching a batch for X_tgt, X_dec (from the 
-        #     dataloaders), zeroing gradient buffers.
-        #   * Loss: computing the loss function on the batches.
-        #   * Backward propagation: after this step, gradients of the
-        #     loss function with respect to the network weights are 
-        #     calculated.
-        #   * Optimizer step: updating network weights.
-        X_tgt, X_dec = next(tgt_it), next(dec_it) 
+        states = next(state_it)
         optimizer.zero_grad()
-        loss = self._cert_loss_fn(X_tgt, X_dec)
+        loss = self.loss_fn(states)
         epoch_loss += loss.item()
         loss.backward()
         optimizer.step()
-      if e % N_EPOCH == 0:
+      if e % (N_EPOCH >> 2) == 0:
         logger.debug(
-          f'Epoch={e:>4}. '
-          + f'Loss={epoch_loss/N_BATCH:10.6f}.')
+          f'Epoch {e:>5}. '
+          + f'Loss={epoch_loss / N_BATCH:>16.6f}')
 
-  def _cert_loss_fn(self, X_tgt, X_dec):
+  def loss_fn(self, S):
     """Aggregate loss function for the certificate NN. 
 
     New components can be added to the loss by defining new 
     functions and calling them in the expression evaluated below.
     """
-    return (
-      # 1*self._loss_tgt(X_tgt) 
-      0*self._loss_tgt(X_tgt) 
-      + 100*self._loss_dec(X_dec)
-    )
+    return 100*self._loss_dec(S)
 
-  def _loss_tgt(self, X_tgt, eps_tgt=EPS_TGT):
-    """Loss component for the Target condition.
-    
-    For any point x in X_tgt, this functions increases the loss if 
-    cert(x) - tau > 0. This enforces that the learned certificate 
-    assigns a low value to all points in X_tgt.
-
-    Args:
-      X_tgt: a batch of points sampled from the target space.
-      eps_tgt: tunable hyperparameter for the learning process.
-    """
-    N = len(X_tgt)
-    return 1/N * torch.sum(
-      torch.relu(self.cert(X_tgt) - eps_tgt))
-
-  def _loss_dec(self, X_dec, eps_dec=EPS_DEC):
+  def _loss_dec(self, S):
     """Loss component for the Decrease condition.
 
-    For any point x in X_dec, this functions increases the loss if 
-    cert(f(x)) - cert(x) + eps_dec > 0. This enforces that 
-    cert(f(x)) < cert(x) for all x in C_dec. 
+    For any point x in S, this functions increases the loss if
+    V(f(x)) - V(x) + 1 > 0. This enforces that
+    V(f(x)) < V(x) for all x in S.
 
     Args:
-      X_dec: a batch of points sampled from outside the target space.
-      eps_dec: tunable hyperparameter for the learning process.
+      S: a batch of points sampled from outside the target space.
     """
-    N = len(X_dec)
 
     # We assume self.env.f only works on a single point in the state 
     # space. Using torch.vmap allows us to evaluate self.env.f on a 
     # set (i.e., a torch.Tensor) of points. 
     f_ = torch.vmap(self.env.f)
-    X_nxt = f_(X_dec)
+    S_nxt = f_(S)
 
-    return 1/N * torch.sum(
-      torch.relu(self.cert(X_nxt) - self.cert(X_dec) + eps_dec))
+    return torch.mean(
+      torch.relu(self.V(S_nxt) - self.V(S) + 1))
 
   # def chk_tgt(self, C_tgt, eps_tgt=EPS_TGT):
   #   """Check for Target condition on training data."""
   #   v = self.cert(C_tgt)
   #   return torch.all(v <= eps_tgt)
 
-
-  def chk_dec(self, C_dec, eps_dec=EPS_DEC):
-    """Check for Decrease condition on training data."""
-    v = self.cert(C_dec)
-    vf = self.cert(torch.vmap(self.env.f)(C_dec))
-    return torch.all(v - vf >= eps_dec)
-  
-  def chk(self, _C_tgt, C_dec):
-    # return (
-    #   self.chk_tgt(C_tgt)
-    #   and self.chk_dec(C_dec) )
-    return self.chk_dec(C_dec)
+  def chk(self, S):
+    return True
 
 
 def sample_ball(dim: int, n_samples, int=100):

@@ -103,11 +103,17 @@ class Spiral(Env):
 
 
 def F_Spiral(x, alpha=Spiral.ALPHA, beta=Spiral.BETA):
-  A = np.array([
-    [ alpha,  beta],
-    [- beta, alpha]
+  fx = sp.symbols('fx_0 fx_1')
+  fx = sp.Matrix(fx)
+  A = sp.Matrix([
+    [alpha,  beta],
+    [-beta, alpha]
   ])
-  return A @ x
+  Ax = A @ x
+  return fx, [
+    sp.Eq(fx[0], Ax[0]),
+    sp.Eq(fx[1], Ax[1]),
+  ]
 
 
 class SuspendedPendulum(Env):
@@ -171,6 +177,9 @@ class SuspendedPendulum(Env):
 
 
 def F_SuspendedPendulum(x, g=9.8, l=1, m=1, b=0.2, tau=0.01):
-  xx_a = x[0] + x[1]*tau
-  xx_b = x[1] + (-(b/m)*x[1] - (g/l)*sp.sin(x[0]))*tau
-  return sp.Matrix([xx_a, xx_b])
+  fx = sp.symbols('fx_0 fx_1')
+  fx = sp.Matrix(fx)
+  return fx, [
+    sp.Eq(fx[0], x[0] + x[1]*tau),
+    sp.Eq(fx[1], x[1] + (-(b/m)*x[1] - (g/l)*sp.sin(x[0]))*tau)
+  ]

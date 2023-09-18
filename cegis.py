@@ -6,18 +6,18 @@ import torch
 from envs import (
   Spiral, F_Spiral,
   SuspendedPendulum, F_SuspendedPendulum)
-from learner import Learner_Reach_C, Learner_Reach_ABV
+from learner import Learner_Reach_V, Learner_Reach_ABV
 from verifier import (
-  Verifier_Reach_C,
+  Verifier_Reach_V,
   Verifier_Reach_ABV_Marabou,
   Verifier_Reach_ABV_Z3,
   Verifier_Reach_ABV_CVC5,
 )
 
 from learner import (
-  nn_abst_2d,
-  nn_bound_2d,
-  nn_cert_2d)
+  nn_A_2d,
+  nn_B_2d,
+  nn_V_2d)
 
 
 MAX_CEGIS_ITER = 10
@@ -34,19 +34,17 @@ FS = {
 }
 
 LEARNERS = {
-  'C': Learner_Reach_C,
+  'V': Learner_Reach_V,
   'ABV': Learner_Reach_ABV,
 }
 
 MODELS = {
-  'C': [nn_cert_2d],
-  'ABV': [nn_abst_2d, nn_bound_2d, nn_cert_2d]
+  'V': [nn_V_2d],
+  'ABV': [nn_A_2d, nn_B_2d, nn_V_2d]
 }
 
 VERIFIERS = {
-  'C': {
-    'Z3': Verifier_Reach_C
-  },
+  'V': {'DReal': Verifier_Reach_V},
   'ABV': {
     'Marabou': Verifier_Reach_ABV_Marabou,
     'Z3': Verifier_Reach_ABV_Z3,
@@ -72,7 +70,6 @@ def main():
   env, F_env = ENVS[envname](), FS[envname]
 
   S = env.sample()
-  # TODO. Tgt condition is not needed. Make changes accordingly.
   # CEGIS loop
   for i in range(MAX_CEGIS_ITER):
     N = len(S)
@@ -85,6 +82,8 @@ def main():
     cexs = verifier.chk()
     if not cexs:
       logger.info('No new CExs found.')
+      # TODO. Export models.
+      break
     else:
       logger.debug(f'CExs={cexs}')
       cexs = [
