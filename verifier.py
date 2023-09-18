@@ -48,6 +48,18 @@ def ColumnVector(pattern: str, dim: int):
     [sp.Symbol(f'{pattern}{i}') for i in range(dim)])
 
 
+def Wb(lyr: nn.Linear):
+  W = lyr.weight.data.numpy()
+  b = None
+  if lyr.bias:
+    b = lyr.bias.data.numpy()
+  else:
+    b = torch.zeros(lyr.out_features)
+  assert b is not None
+  b = np.expand_dims(b, 1)
+  return W, b
+
+
 def Net(net: nn.Sequential, x: sp.Matrix, netname='y'):
   """Representation of a ReLU-activated NN in SymPy.
   
@@ -63,6 +75,7 @@ def Net(net: nn.Sequential, x: sp.Matrix, netname='y'):
     constraints: a list of SymPy expressions. All expressions are of
     the form Eq(..., ...).
   """
+
   output = None
   constraints = []
   for i in range(len(net)):
@@ -71,9 +84,7 @@ def Net(net: nn.Sequential, x: sp.Matrix, netname='y'):
       case nn.Linear():
         output = ColumnVector(
           f'{netname}_{i},', layer.out_features)
-        W = net[i].weight.data.numpy()
-        b = net[i].bias.data.numpy()
-        b = np.expand_dims(b, 1)
+        W, b = Wb(net[i])
         result = W @ x + b
         for j in range(layer.out_features):
           constraints.append(sp.Eq(output[j], result[j]))
@@ -335,35 +346,43 @@ def sympy_to_dreal(expr, var):
 # Verifiers are named after their corresponding learners. Concretely, 
 # Verifier_W (where W is a string) corresponds to Learner_W.
 
-class Verifier_Reach_C(Verifier):
+class Verifier_Reach_V(Verifier):
   def __init__(self, models, env, F):
-    self.cert = models[0]
+    self.V = models[0]
     self.env = env
     self.F = F
 
   def chk(self):
-    return [self.chk_dec()]
+    cex = self.chk_dec()
+    return cex if len(cex) != 0 else []
 
   def chk_dec(self):
-    x_sp = X(self.env.dim)
-    x_z3 = z3.RealVector('x', self.env.dim)
-    var = {x_sp[i]: x_z3[i] for i in range(self.env.dim)}
-    v, vf = z3.Real('v'), z3.Real('vf')
+    logger.info('Checking the Decrease condition ...')
+    dim = self.env.dim
+    x = ColumnVector('x_', dim)
 
-    # The lists bound and problem contain SymPy expressions for
-    # variable bounds and problem constrains.
     bounds, problem = [], []
-    bounds.append(BoundIn(self.env.bnd, x_sp))
-    bounds.append(BoundOut(self.env.tgt, x_sp))
-    bounds = [sympy_to_z3(b, var) for b in bounds]
-    problem.append(
-      v  == sympy_to_z3( Net(self.cert, x_sp)[0], var) )
-    problem.append(
-      vf == sympy_to_z3( Net(self.cert, self.F(x_sp))[0], var) )
-    problem.append(v <= vf)
+    bounds += BoundIn(self.env.bnd, x)
+    bounds += BoundOut(self.env.tgt, x)
+
+    # V(x) <= V(F(x))
+    v_o, v_cs = Net(self.V, x, 'V')
+    vf_o, vf_cs = Net(self.V, self.F(x), 'VF')
+    problem += v_cs
+    problem += vf_cs
+    problem.append(v_o[0] <= vf_o[0])
     logger.debug('bounds=' + pprint.pformat(bounds))
     logger.debug('problem=' + pprint.pformat(problem))
-    return solve_z3(bounds + problem, x_z3)
+    constraints = bounds + problem
+
+    x_dreal = [dreal.Variable(f'x_{i}') for i in range(dim)]
+    var = [c.atoms(sp.Symbol) for c in constraints]
+    var = set().union(*var)
+    var = {v: dreal.Variable(v.name) for v in var}
+    # logger.debug(var)
+    constraints = [sympy_to_dreal(c, var) for c in constraints]
+    formula = dreal.And(*constraints)
+    return solve_dreal(formula, x_dreal)
 
 
 def nn_norm_l1(dim: int):
@@ -419,7 +438,6 @@ class Verifier_Reach_ABV(Verifier):
 
   def chk(self):
     cexs = [self.chk_abst(), self.chk_dec()]
-    # cexs = [self.chk_dec()]
     return [cex for cex in cexs if len(cex) != 0]
 
   def chk_abst(self):
