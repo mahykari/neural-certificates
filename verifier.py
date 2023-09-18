@@ -49,9 +49,14 @@ def ColumnVector(pattern: str, dim: int):
 
 
 def Wb(lyr: nn.Linear):
+  """Weight (W) and bias (b) of an nn.Linear layer.
+
+  If lyr has no bias (e.g., by setting bias=False in constructor),
+  then a zero Tensor will be returned as bias.
+  """
   W = lyr.weight.data.numpy()
   b = None
-  if lyr.bias:
+  if lyr.bias is not None:
     b = lyr.bias.data.numpy()
   else:
     b = torch.zeros(lyr.out_features)
@@ -367,8 +372,10 @@ class Verifier_Reach_V(Verifier):
 
     # V(x) <= V(F(x))
     v_o, v_cs = Net(self.V, x, 'V')
-    vf_o, vf_cs = Net(self.V, self.F(x), 'VF')
+    f_o, f_cs = self.F(x)
+    vf_o, vf_cs = Net(self.V, f_o, 'VF')
     problem += v_cs
+    problem += f_cs
     problem += vf_cs
     problem.append(v_o[0] <= vf_o[0])
     logger.debug('bounds=' + pprint.pformat(bounds))
@@ -379,7 +386,6 @@ class Verifier_Reach_V(Verifier):
     var = [c.atoms(sp.Symbol) for c in constraints]
     var = set().union(*var)
     var = {v: dreal.Variable(v.name) for v in var}
-    # logger.debug(var)
     constraints = [sympy_to_dreal(c, var) for c in constraints]
     formula = dreal.And(*constraints)
     return solve_dreal(formula, x_dreal)
@@ -456,19 +462,19 @@ class Verifier_Reach_ABV(Verifier):
     # err = || A(x) - f(x) ||_1
     a_o, a_cs = Net(self.A, x, 'A')
     problem += a_cs
-    f = ColumnVector('f_', dim)
-    Fx = self.F(x)
-    problem += [sp.Eq(f[i], Fx[i]) for i in range(dim)]
+    f_o, f_cs = self.F(x)
     err = sp.Symbol('err')
-    problem.append(sp.Eq(err, Norm_L1(a_o - f)))
+    problem.append(sp.Eq(err, Norm_L1(a_o - f_o)))
     # b = B(x). We need to reshape b to be a scalar, rather than a
     # matrix with only one element.
     b_o, b_cs = Net(self.B, x, 'B')
     problem += b_cs
     assert b_o.shape == (1, 1)
     b_o = b_o[0]
-
     problem.append(err > b_o)
+    logger.debug('bounds=' + pprint.pformat(bounds))
+    logger.debug('problem=' + pprint.pformat(problem))
+
     x_dreal = [dreal.Variable(f'x_{i}') for i in range(dim)]
     constraints = bounds + problem
     var = [c.atoms(sp.Symbol) for c in constraints]
