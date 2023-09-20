@@ -1,3 +1,4 @@
+import copy
 import logging
 from abc import ABC, abstractmethod
 from fractions import Fraction
@@ -17,7 +18,6 @@ from maraboupy import Marabou
 from maraboupy import MarabouCore
 
 from envs import Box, Env
-
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -48,20 +48,22 @@ def ColumnVector(pattern: str, dim: int):
     [sp.Symbol(f'{pattern}{i}') for i in range(dim)])
 
 
-def Wb(lyr: nn.Linear):
+def Wb(lyr: nn.Linear, numpy=True):
   """Weight (W) and bias (b) of an nn.Linear layer.
 
   If lyr has no bias (e.g., by setting bias=False in constructor),
   then a zero Tensor will be returned as bias.
   """
-  W = lyr.weight.data.numpy()
+  W = lyr.weight.data
   b = None
   if lyr.bias is not None:
-    b = lyr.bias.data.numpy()
+    b = lyr.bias.data
   else:
     b = torch.zeros(lyr.out_features)
   assert b is not None
-  b = np.expand_dims(b, 1)
+  b = torch.unsqueeze(b, 1)
+  if numpy:
+    W, b = W.numpy(), b.numpy()
   return W, b
 
 
@@ -391,49 +393,102 @@ class Verifier_Reach_V(Verifier):
     return solve_dreal(formula, x_dreal)
 
 
-def nn_norm_l1(dim: int):
-  """NN to compute L1 norm of a vector [x1, ..., xk], where k = dim.
-  
-  Args:
-    dim: dimensionality of input vector.
-  """
-  net = nn.Sequential(
-    nn.Linear(dim, 2*dim, bias=False),
-    nn.ReLU(),
-    nn.Linear(4, 1, bias=False),
-  )
-
-  with torch.no_grad():
-    net[0].weight = nn.Parameter(
-      torch.hstack([torch.eye(2, 2), torch.eye(2, 2) * -1]).T )
-    net[2].weight = nn.Parameter(torch.ones(1, 4))
-
-  return net
-
-
 class ABVComposite(nn.Module):
   """Composite network containing A, B, and V. This network takes
   (x, y) as input, where x is a sample from the state space and y is 
   an error variable, and returns the following as output: 
-  ( ||y||_1 - B(x), V(x) - V(A(x) + y) )  (Eq. 1)
-  
-  Assumption. Both x and y are passed as 2D-Tensors with only one 
+  ( ||y||_1 - B(x), V(x) - V(A(x) + y) )
+
+  This network consists of A, B, and V along with paddings (identity
+  function) and simple operations such as addition, and L1-norm
+  computation. The resulting network shall look like a simple neural
+  network with Linear and ReLU layers.
+
+  Assumption. Both x and y are passed as 2D-Tensors with only one
   row and matching number of columns. If this assumption is true, 
   output is also a 2D-Tensor with only one row and two columns.
   """
+
   def __init__(self, A, B, V, dim):
     super().__init__()
     self.A = A
     self.B = B
     self.V = V
-    self.NormL1 = nn_norm_l1(dim)
+    self.V1 = copy.deepcopy(V)
+    self.I_x = self.identity(dim)
+    self.I_y = self.identity(dim)
+    self.L1Norm_y = self.l1norm(dim)
+
+  @staticmethod
+  def identity(dim):
+    net = nn.Sequential(
+      nn.Linear(dim, 2 * dim, bias=False),
+      nn.ReLU(),
+      nn.Linear(2 * dim, dim, bias=False),
+    )
+    with torch.no_grad():
+      I_ = torch.eye(dim, dim)
+      net[0].weight = nn.Parameter(torch.vstack((I_, -I_)))
+      net[2].weight = nn.Parameter(torch.hstack((I_, -I_)))
+    return net
+
+  @staticmethod
+  def l1norm(dim):
+    net = nn.Sequential(
+      nn.Linear(dim, 2*dim, bias=False),
+      nn.ReLU(),
+      nn.Linear(2*dim, dim, bias=False),
+      nn.ReLU(),
+    )
+    with torch.no_grad():
+      I_ = torch.eye(dim, dim)
+      net[0].weight = nn.Parameter(torch.vstack((I_, -I_)))
+      net[2].weight = nn.Parameter(torch.hstack((I_, I_)))
+    return net
+
+  @staticmethod
+  def vcompose_linear(layers):
+    """Vertically compose a list of nn.Linear layers.
+
+    Args:
+      layers: list of nn.Linear-s.
+    """
+    in_ = [layer.in_features for layer in layers]
+    out = [layer.out_features for layer in layers]
+    result = nn.Linear(sum(in_), sum(out))
+    with torch.no_grad():
+      Wbs = [Wb(layer, numpy=False) for layer in layers]
+      Ws, bs = list(zip(*Wbs))
+      result.bias = nn.Parameter(torch.cat(bs))
+      W_result = torch.Tensor(0, sum(in_))
+      for i in range(len(layers)):
+        W_padded = (
+          torch.zeros(out[i], sum(in_[:i])),
+          Ws[i],
+          torch.zeros(out[i], sum(in_[i+1:]))
+        )
+        W_padded = torch.hstack(W_padded)
+        W_result = torch.vstack((W_result, W_padded))
+      result.weight = nn.Parameter(W_result)
+    return result
+
+  def build(self, dim):
+    # Input layout = (x, y)
+    # Assumption. A is structured as (Linear, ReLU, Linear).
+    # TODO.
+    pass
 
   def forward(self, x, y):
-    v = self.V(x)
-    vp = self.V(self.A(x) + y)
-    norm_y = self.NormL1(y)
-    b = self.B(x)
-    return torch.cat([norm_y + -1*b, v + -1*vp], dim=1)
+    # TODO. update to use the homogeneous NN.
+    Ax = self.A(x)
+    x1 = self.I_x(x)
+    y1 = self.I_y(y)
+    Vx = self.V(x1)
+    VAxy = self.V1(Ax + y1)
+    Bx = self.B(x1)
+    L1y = self.L1Norm_y(y1)
+
+    return torch.cat([L1y + -1*Bx, Vx + -1*VAxy], dim=1)
 
 
 class Verifier_Reach_ABV(Verifier):
@@ -528,7 +583,6 @@ class Verifier_Reach_ABV_Marabou(Verifier_Reach_ABV):
     abv = ABVComposite(
       self.A, self.B, self.V, self.env.dim)
     x, y = torch.randn(1, 2), torch.randn(1, 2)
-    o = abv(x, y)
 
     filename = 'marabou_drafts/abv.onnx'
     torch.onnx.export(
@@ -549,7 +603,6 @@ class Verifier_Reach_ABV_Marabou(Verifier_Reach_ABV):
     dim = self.env.dim
     low = bnd.low.numpy()
     high = bnd.high.numpy()
-
     # Bounding y as well to avoid having infinite bounds.
     for i in range(dim):
       network.setLowerBound(x[i], low[i])
@@ -557,6 +610,7 @@ class Verifier_Reach_ABV_Marabou(Verifier_Reach_ABV):
       network.setLowerBound(y[i], low[i])
       network.setUpperBound(y[i], high[i])
 
+    # Bounding x to not be in the target region.
     tgt = self.env.tgt
     low = tgt.low.numpy()
     high = tgt.high.numpy()
@@ -569,6 +623,7 @@ class Verifier_Reach_ABV_Marabou(Verifier_Reach_ABV):
       eq2 = MarabouCore.Equation(MarabouCore.Equation.LE)
       eq2.addAddend(1, x[i])
       eq2.setScalar(low[i])
+      # eq1 \/ eq2
       network.addDisjunctionConstraint([[eq1], [eq2]])
 
     network.setUpperBound(o[0], 0.0)
@@ -578,7 +633,7 @@ class Verifier_Reach_ABV_Marabou(Verifier_Reach_ABV):
 
     network.saveQuery('marabou_drafts/abv-query.txt')
     options = Marabou.createOptions(
-      verbosity=0,
+      verbosity=2,
       tighteningStrategy='none',
     )
     chk, vals, _stats = network.solve(options=options)
