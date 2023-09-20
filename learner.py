@@ -33,9 +33,9 @@ def nn_A_2d():
   """Utility function to generate a default abstraction NN for a 
   2D space."""
   return nn.Sequential(
-    nn.Linear(2, 16),
+    nn.Linear(2, 4),
     nn.ReLU(),
-    nn.Linear(16, 2),
+    nn.Linear(4, 2),
   )
 
 
@@ -50,9 +50,9 @@ def nn_B_2d():
   || f - A ||.
   """
   return nn.Sequential(
-    nn.Linear(2, 16),
+    nn.Linear(2, 4),
     nn.ReLU(),
-    nn.Linear(16, 1),
+    nn.Linear(4, 1),
     nn.ReLU()
   )
 
