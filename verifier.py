@@ -433,6 +433,44 @@ class ABVComposite(nn.Module):
     return net
 
   @staticmethod
+  def broadcast(dim, k) -> nn.Linear:
+    """Broadcaster NN that takes input (x) with dimensionality dim,
+    and returns (x, ... x) (k times) of dimensionality k*dim.
+
+    Args:
+      dim: dimensionality of input.
+      k: broadcasting degree.
+    """
+    # TODO.
+    pass
+
+  @staticmethod
+  def permute(dim, n, p) -> nn.Linear:
+    """Permutation NN that takes input (x_1, ..., x_n), where each
+    x_i is of dimensionality dim, and returns (x_p_1, ..., x_p_n),
+    i.e., a permutation of (x_1, ..., x_n).
+
+    Args:
+      dim: dimensionality of each x_i.
+      n: number of input values.
+      p: permutation (i.e., a list containing all integers in
+      [0, n-1]).
+    """
+    # TODO.
+    pass
+
+  @staticmethod
+  def sum(dim) -> nn.Linear:
+    """Summation NN that takes inputs (x, y) with equal
+    dimensionality dim, and returns x+y (vector sum of x and y).
+
+    Args:
+      dim: dimensionality of each summand.
+    """
+    # TODO.
+    pass
+
+  @staticmethod
   def l1norm(dim):
     net = nn.Sequential(
       nn.Linear(dim, 2*dim, bias=False),
