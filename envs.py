@@ -98,7 +98,7 @@ class Spiral(Env):
       (X_dec, ): X_dec are points sampled from the decrease
       (everywhere outside target) space.
     """
-    S = torch.randn(4000, 2)
+    S = torch.randn(16000, 2)
     return S
 
 
@@ -170,7 +170,7 @@ class SuspendedPendulum(Env):
     # Samples in S are drawn from Normal(0, 1). They are then scaled
     # so that all angles are in range [-pi, pi] and all angular
     # velocities are in range [-4, 4].
-    S = torch.randn(4000, 2)
+    S = torch.randn(16000, 2)
     S *= torch.Tensor([3.14/3, 4/3])
 
     return S
