@@ -441,8 +441,13 @@ class ABVComposite(nn.Module):
       dim: dimensionality of input.
       k: broadcasting degree.
     """
-    # TODO.
-    pass
+    net = nn.Linear(dim, dim * k, bias=False)
+    with torch.no_grad():
+      I_ = torch.eye(dim, dim)
+      net[0].weight = nn.Parameter(I_)
+      for i in range(k-1):
+        net[0].weight = nn.Parameter(torch.vstack((net[0].weight, I_)))
+    return net
 
   @staticmethod
   def permute(dim, n, p) -> nn.Linear:
@@ -456,8 +461,12 @@ class ABVComposite(nn.Module):
       p: permutation (i.e., a list containing all integers in
       [0, n-1]).
     """
-    # TODO.
-    pass
+    net = nn.Linear(dim, dim, bias=False)
+    with torch.no_grad():
+      net[0].weight = torch.zeros(dim, dim)
+      for i in range(dim):
+        net[0].weight[i, p[i]] = 1
+    return net
 
   @staticmethod
   def sum(dim) -> nn.Linear:
