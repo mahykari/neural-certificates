@@ -70,11 +70,11 @@ def main():
   env, F_env = ENVS[envname](), FS[envname]
 
   S = env.sample()
+  models = [m() for m in MODELS[modelcomb]]
   # CEGIS loop
   for i in range(MAX_CEGIS_ITER):
     N = len(S)
     logger.info(f'Iteration {i}. |S|={len(S)}')
-    models = [m() for m in MODELS[modelcomb]]
     learner = LEARNERS[modelcomb](env, models)
     learner.fit(S)
     verifier = VERIFIERS[modelcomb][solver](models, env, F_env)
