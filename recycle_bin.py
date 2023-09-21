@@ -1,3 +1,4 @@
+import copy
 from typing import List, Callable
 
 import torch 
@@ -88,7 +89,7 @@ def nn_norm_l1(dim: int):
   return net
 
 
-class ABVComposite(nn.Module):
+class ABVComposite_V1(nn.Module):
   """Composite network containing A, B, and V. This network takes
   (x, y) as input, where x is a sample from the state space and y is
   an error variable, and returns the following as output:
@@ -141,3 +142,42 @@ def v_compose(models):
       case _:
         raise NotImplementedError()
   return result
+
+
+class ABVComposite_V2(nn.Module):
+  """Composite network containing A, B, and V. This network takes
+  (x, y) as input, where x is a sample from the state space and y is
+  an error variable, and returns the following as output:
+  ( ||y||_1 - B(x), V(x) - V(A(x) + y) )
+
+  This network consists of A, B, and V along with paddings (identity
+  function) and simple operations such as addition, and L1-norm
+  computation. The resulting network shall look like a simple neural
+  network with Linear and ReLU layers.
+
+  Assumption. Both x and y are passed as 2D-Tensors with only one
+  row and matching number of columns. If this assumption is true,
+  output is also a 2D-Tensor with only one row and two columns.
+  """
+  def __init__(self, A, B, V, dim):
+    super().__init__()
+    self.A = A
+    self.B = B
+    self.V = V
+    self.V1 = copy.deepcopy(V)
+    self.I_x = self.identity_relu(dim)
+    self.I_y = self.identity_relu(dim)
+    self.L1Norm_y = self.l1norm(dim)
+
+  def forward(self, x, y):
+    # TODO. update to use the homogeneous NN.
+    Ax = self.A(x)
+    x1 = self.I_x(x)
+    y1 = self.I_y(y)
+    Vx = self.V(x1)
+    VAxy = self.V1(Ax + y1)
+    Bx = self.B(x1)
+    L1y = self.L1Norm_y(y1)
+
+    return torch.cat([L1y + -1 * Bx, Vx + -1 * VAxy], dim=1)
+
