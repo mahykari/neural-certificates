@@ -196,7 +196,7 @@ class Learner_Reach_ABV(Learner):
   
   def fit(self, S):
     # N_EPOCH, N_BATCH = 2048, 50
-    N_EPOCH, N_BATCH = 512, 50  # For debugging purposes
+    N_EPOCH, N_BATCH = 64, 50  # For debugging purposes
     LR, WEIGHT_DECAY = 3e-3, 1e-5
     
     state_ld = D.DataLoader(
