@@ -104,6 +104,15 @@ class TestABVComposite(unittest.TestCase):
     result = abv(xy)
     self.assertTrue(torch.equal(expected, result))
 
+  def test_hstack(self):
+    l1, l2 = nn.Linear(2, 4), nn.Linear(4, 3)
+    l_stk = ABVComposite.hstack([l1, l2])
+    x = torch.rand(2)
+    expected = l2(l1(x))
+    result = l_stk(x)
+    # Using torch.allclose to account for floating-point errors
+    self.assertTrue(torch.allclose(expected, result))
+
 
 if __name__ == '__main__':
     unittest.main()
