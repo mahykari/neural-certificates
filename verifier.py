@@ -464,7 +464,7 @@ class ABVComposite(nn.Module):
     with torch.no_grad():
       I_ = torch.eye(dim, dim)
       W = I_
-      for i in range(k-1):
+      for i in range(k - 1):
         W = torch.vstack((W, I_))
       net.weight = nn.Parameter(W)
     return net
@@ -546,7 +546,7 @@ class ABVComposite(nn.Module):
 
   @staticmethod
   def vstack(layers: List[nn.Linear]) -> nn.Linear:
-    """Vertically stack a list of nn.Linear layers.
+    """Vertical stacking of a list of nn.Linear layers.
 
     Args:
       layers: list of nn.Linear-s.
@@ -570,6 +570,69 @@ class ABVComposite(nn.Module):
         W_padded = torch.hstack(W_padded)
         W_result = torch.vstack((W_result, W_padded))
       result.weight = nn.Parameter(W_result)
+    return result
+
+  @staticmethod
+  def hstack(layers: List[nn.Linear]) -> nn.Linear:
+    """Horizontal stacking a list of nn.Linear layers.
+
+    Note that return value of this function is different with
+    nn.Sequential(*layers), as hstack(layers) return a single
+    nn.Linear which computes the same function as
+    nn.Sequential(*layers).
+
+    Args:
+      layers: list of nn.Linear-s.
+    """
+    W_res, b_res = Wb(layers[0], numpy=False)
+    for i in range(1, len(layers)):
+      W, b = Wb(layers[i], numpy=False)
+      W_res, b_res = W @ W_res, b + W @ b_res
+    b_res = torch.squeeze(b_res, dim=1)
+
+    out, in_ = W_res.shape
+    result = nn.Linear(in_, out)
+    with torch.no_grad():
+      result.weight = nn.Parameter(W_res)
+      result.bias = nn.Parameter(b_res)
+    return result
+
+  def contract(self, layers) -> nn.Sequential:
+    """Contracted NN from nn.Linear and nn.ReLU layers.
+
+    The returned NN is 'contracted', as all consecutive Linear layers
+    are stacked together; so the resulting NN is structured as
+    (Linear ReLU)* Last, where Last is either nothing or a Linear.
+    """
+
+    def xor(x, y):
+      return type(x) != type(y)
+
+    # Assumption. All layers are either Linear or ReLU.
+    assert all(
+      isinstance(layer, nn.ReLU)
+      or isinstance(layer, nn.Linear)
+      for layer in layers
+    )
+
+    # Zero-Padding
+    layers = [None] + layers + [None]
+    # Changes is all indices `i` in the zero-padded layers such that
+    # xor(layers[i], layers[i+1]) = True
+    changes = []
+    for i in range(len(layers)-1):
+      if xor(layers[i], layers[i+1]):
+        changes.append(i)
+    #  There are even number of changes in the zero-padded layers.
+    assert len(changes) % 2 == 0
+    result = nn.Sequential()
+    for i in range(len(changes)):
+      if i % 2 == 1:
+        result.append(nn.ReLU())
+        continue
+      start, end = changes[i]+1, changes[i+1]
+      linears = layers[start:end+1]
+      result.append(self.hstack(linears))
     return result
 
   def build(self, dim):
@@ -683,7 +746,8 @@ class ABVComposite(nn.Module):
         torch.unsqueeze(torch.sum(torch.abs(y)), 0) - self.B(x)
       ))
     )
-    return result
+
+    return self.contract(list(result.children()))
 
   def forward(self, xy):
     return self.Composite(xy)
@@ -779,8 +843,10 @@ class Verifier_Reach_ABV_Marabou(Verifier_Reach_ABV):
   def chk_dec(self):
     abv = ABVComposite(
       self.A, self.B, self.V, self.env.dim)
+    abv = abv.Composite
+    logger.debug(f'Composite. {abv}')
     dim = self.env.dim
-    xy = torch.randn(1, 2*dim)
+    xy = torch.randn(1, 2 * dim)
 
     filename = 'marabou_drafts/abv.onnx'
     torch.onnx.export(
@@ -830,13 +896,13 @@ class Verifier_Reach_ABV_Marabou(Verifier_Reach_ABV):
 
     network.saveQuery('marabou_drafts/abv-query.txt')
     options = Marabou.createOptions(
-      verbosity=2,
+      verbosity=0,
       tighteningStrategy='none',
     )
     chk, vals, _stats = network.solve(options=options)
     if chk == 'sat':
       return [vals[xy[i]] for i in range(dim)]
-    return None
+    return []
 
 
 class Verifier_Reach_ABV_Z3(Verifier_Reach_ABV):
