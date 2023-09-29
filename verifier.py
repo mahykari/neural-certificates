@@ -758,9 +758,22 @@ class Verifier_Reach_ABV(Verifier):
     self.A, self.B, self.V = models
     self.env = env
     self.F = F
+    self.delta = 0.1
 
   def chk(self):
-    cexs = [self.chk_abst(), self.chk_dec()]
+    RATIO = 2
+    logger.info(
+      'Checking the Abstraction-Bound condition' +
+      f'(delta={self.delta}) ...')
+    cex_abst = self.chk_abst()
+    self.delta *= RATIO
+
+    logger.info('Checking the Decrease condition ...')
+    cex_dec = self.chk_dec()
+
+    logger.info(f'Abstraction-Bound CEx={cex_abst}')
+    logger.info(f'Decrease CEx={cex_dec}')
+    cexs = [cex_abst, cex_dec]
     return [cex for cex in cexs if len(cex) != 0]
 
   def chk_abst(self):
@@ -770,7 +783,6 @@ class Verifier_Reach_ABV(Verifier):
     an NRA query), this method always uses DReal, and need not be
     implemented in subclasses of Verifier_Reach_ABV.
     """
-    logger.info('Checking the Abstraction-Bound condition ...')
     dim = self.env.dim
     x = ColumnVector('x_', self.env.dim)
 
@@ -797,10 +809,9 @@ class Verifier_Reach_ABV(Verifier):
     var = [c.atoms(sp.Symbol) for c in constraints]
     var = set().union(*var)
     var = {v: dreal.Variable(v.name) for v in var}
-    # logger.debug(var)
     constraints = [sympy_to_dreal(c, var) for c in constraints]
     formula = dreal.And(*constraints)
-    return solve_dreal(formula, x_dreal)
+    return solve_dreal(formula, x_dreal, delta=self.delta)
 
   def dec_constrains(self):
     """Symbolic constrains for encoding the Decrease Condition."""
@@ -896,8 +907,8 @@ class Verifier_Reach_ABV_Marabou(Verifier_Reach_ABV):
 
     network.saveQuery('marabou_drafts/abv-query.txt')
     options = Marabou.createOptions(
-      verbosity=0,
-      tighteningStrategy='none',
+      verbosity=1,
+      # tighteningStrategy='none',
     )
     chk, vals, _stats = network.solve(options=options)
     if chk == 'sat':
@@ -907,7 +918,6 @@ class Verifier_Reach_ABV_Marabou(Verifier_Reach_ABV):
 
 class Verifier_Reach_ABV_Z3(Verifier_Reach_ABV):
   def chk_dec(self):
-    logger.info('Checking the Decrease condition ...')
     constraints = self.dec_constrains()
     var = [c.atoms(sp.Symbol) for c in constraints]
     var = set().union(*var)
@@ -920,7 +930,6 @@ class Verifier_Reach_ABV_Z3(Verifier_Reach_ABV):
 
 class Verifier_Reach_ABV_CVC5(Verifier_Reach_ABV):
   def chk_dec(self):
-    logger.info('Checking the Decrease condition ...')
     constraints = self.dec_constrains()
     var = [c.atoms(sp.Symbol) for c in constraints]
     var = set().union(*var)
