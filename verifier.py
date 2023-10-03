@@ -758,10 +758,10 @@ class Verifier_Reach_ABV(Verifier):
     self.A, self.B, self.V = models
     self.env = env
     self.F = F
-    self.delta = 0.1
+    self.delta = 0.001
 
   def chk(self):
-    RATIO = 2
+    RATIO = 1
     logger.info(
       'Checking the Abstraction-Bound condition' +
       f'(delta={self.delta}) ...')
