@@ -74,6 +74,12 @@ class Learner(ABC):
   def fit(self, S):
     ...
 
+  @property
+  def device(self):
+    # if torch.cuda.is_available():
+    #   return 'cuda'
+    return 'cpu'
+
 
 class Learner_Reach_V:
   EPS_TGT, EPS_DEC = 3e-1, 1e0
@@ -161,7 +167,7 @@ class Learner_Reach_V:
     return True
 
 
-def sample_ball(dim: int, n_samples, int=100):
+def sample_ball(dim: int, n_samples: int = 100):
   """Sampled points from the surface of a unit ball.
   
   Args: 
@@ -196,8 +202,13 @@ class Learner_Reach_ABV(Learner):
   def fit(self, S):
     # N_EPOCH, N_BATCH = 2048, 50
     N_EPOCH, N_BATCH = 64, 50  # For debugging purposes
-    RATIO = 2
-    
+    RATIO = 1
+
+    self.A.to(self.device)
+    self.B.to(self.device)
+    self.V.to(self.device)
+    S = S.to(self.device)
+
     state_ld = D.DataLoader(
       S, batch_size=len(S) // N_BATCH, shuffle=True)
 
@@ -212,6 +223,7 @@ class Learner_Reach_ABV(Learner):
     for e in range(N_EPOCH+1):
       epoch_loss = 0
       ball = sample_ball(2, 1000)
+      ball = ball.to(self.device)
       state_it = iter(state_ld)
       for _ in range(N_BATCH):
         states = next(state_it)
@@ -225,7 +237,17 @@ class Learner_Reach_ABV(Learner):
           f'Epoch {e:>5}. '
           + f'Loss={epoch_loss/N_BATCH:>16.6f}')
 
+    # Reducing learning rate for future iterations
     self.learning_rate /= RATIO
+
+    # Post-processing GPU operations.
+    # 1. Clear GPU cache
+    # 2. Move data back to CPU
+    torch.cuda.empty_cache()
+    self.A.to('cpu')
+    self.B.to('cpu')
+    self.V.to('cpu')
+    S = S.to('cpu')
 
   def loss_abst(self, S):
     f_vec = torch.vmap(self.env.f)
@@ -252,9 +274,10 @@ class Learner_Reach_ABV(Learner):
 
   def loss_fn(self, ball, S):
     return (
-      self.loss_abst(S)
-      # + self.loss_bound(S)
-      + self.loss_cert(ball, S) )
+      1000*self.loss_abst(S)
+      + 1000*self.loss_bound(S)
+      + self.loss_cert(ball, S)
+    )
   
   def chk(self, S):
     # TODO. Update this check with actual values.

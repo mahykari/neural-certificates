@@ -54,6 +54,12 @@ class Env(ABC):
     """State transition function."""
     ...
 
+  @property
+  def device(self):
+    if torch.cuda.is_available():
+      return 'cuda'
+    return 'cpu'
+
 
 class Spiral(Env):
   ALPHA, BETA = 0.5, 0.5
