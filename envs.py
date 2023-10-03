@@ -98,7 +98,7 @@ class Spiral(Env):
       (X_dec, ): X_dec are points sampled from the decrease
       (everywhere outside target) space.
     """
-    S = torch.randn(4000, 2)
+    S = torch.randn(16000, 2)
     return S
 
 
@@ -170,7 +170,7 @@ class SuspendedPendulum(Env):
     # Samples in S are drawn from Normal(0, 1). They are then scaled
     # so that all angles are in range [-pi, pi] and all angular
     # velocities are in range [-4, 4].
-    S = torch.randn(4000, 2)
+    S = torch.randn(16000, 2)
     S *= torch.Tensor([3.14/3, 4/3])
 
     return S
@@ -182,4 +182,38 @@ def F_SuspendedPendulum(x, g=9.8, l=1, m=1, b=0.2, tau=0.01):
   return fx, [
     sp.Eq(fx[0], x[0] + x[1]*tau),
     sp.Eq(fx[1], x[1] + (-(b/m)*x[1] - (g/l)*sp.sin(x[0]))*tau)
+  ]
+
+
+class Unstable2D(Env):
+  dim = 2
+  bnd = Box(
+    low=torch.Tensor([-100, -100]),
+    high=torch.Tensor([100, 100]),
+  )
+
+  tgt = Box(
+    low=torch.Tensor([-1, -1]),
+    high=torch.Tensor([1, 1]),
+  )
+
+  RATIO = -1.1
+
+  def nxt(self, x):
+    return self.RATIO * x
+
+  f = nxt
+
+  @staticmethod
+  def sample():
+    S = torch.randn(160000, 2)
+    return S
+
+
+def F_Unstable2D(x):
+  fx = sp.symbols('fx_0 fx_1')
+  fx = sp.Matrix(fx)
+  return fx, [
+    sp.Eq(fx[0], Unstable2D.RATIO * x[0]),
+    sp.Eq(fx[1], Unstable2D.RATIO * x[1]),
   ]

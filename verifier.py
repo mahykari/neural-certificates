@@ -1,3 +1,4 @@
+import copy
 import logging
 from abc import ABC, abstractmethod
 from fractions import Fraction
@@ -17,7 +18,6 @@ from maraboupy import Marabou
 from maraboupy import MarabouCore
 
 from envs import Box, Env
-
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -48,20 +48,22 @@ def ColumnVector(pattern: str, dim: int):
     [sp.Symbol(f'{pattern}{i}') for i in range(dim)])
 
 
-def Wb(lyr: nn.Linear):
+def Wb(lyr: nn.Linear, numpy=True):
   """Weight (W) and bias (b) of an nn.Linear layer.
 
   If lyr has no bias (e.g., by setting bias=False in constructor),
   then a zero Tensor will be returned as bias.
   """
-  W = lyr.weight.data.numpy()
+  W = lyr.weight.data
   b = None
   if lyr.bias is not None:
-    b = lyr.bias.data.numpy()
+    b = lyr.bias.data
   else:
     b = torch.zeros(lyr.out_features)
   assert b is not None
-  b = np.expand_dims(b, 1)
+  b = torch.unsqueeze(b, 1)
+  if numpy:
+    W, b = W.numpy(), b.numpy()
   return W, b
 
 
@@ -391,49 +393,364 @@ class Verifier_Reach_V(Verifier):
     return solve_dreal(formula, x_dreal)
 
 
-def nn_norm_l1(dim: int):
-  """NN to compute L1 norm of a vector [x1, ..., xk], where k = dim.
-  
-  Args:
-    dim: dimensionality of input vector.
-  """
-  net = nn.Sequential(
-    nn.Linear(dim, 2*dim, bias=False),
-    nn.ReLU(),
-    nn.Linear(4, 1, bias=False),
-  )
-
-  with torch.no_grad():
-    net[0].weight = nn.Parameter(
-      torch.hstack([torch.eye(2, 2), torch.eye(2, 2) * -1]).T )
-    net[2].weight = nn.Parameter(torch.ones(1, 4))
-
-  return net
-
-
 class ABVComposite(nn.Module):
   """Composite network containing A, B, and V. This network takes
-  (x, y) as input, where x is a sample from the state space and y is 
-  an error variable, and returns the following as output: 
-  ( ||y||_1 - B(x), V(x) - V(A(x) + y) )  (Eq. 1)
-  
-  Assumption. Both x and y are passed as 2D-Tensors with only one 
-  row and matching number of columns. If this assumption is true, 
-  output is also a 2D-Tensor with only one row and two columns.
+  (x, y) as (a single) input, where x is a sample from the state
+  space and y is an error variable, and returns the following as
+  output: (
+    V(x) - V(A(x) + y),
+    ||y||_1 - B(x)
+  )
+
+  This network consists of A, B, and V along with paddings (identity
+  function) and simple operations such as addition, and L1-norm
+  computation. The resulting network shall look like a simple neural
+  network with Linear and ReLU layers.
+
+  Assumption. X and y are passed concatenated together and as a
+  2D-Tensor with only one row.  Output is also a 2D-Tensor with only
+  one row and two columns.
   """
+
   def __init__(self, A, B, V, dim):
     super().__init__()
     self.A = A
     self.B = B
     self.V = V
-    self.NormL1 = nn_norm_l1(dim)
+    self.V1 = copy.deepcopy(V)
+    self.I_x = self.identity_relu(dim)
+    self.I_y = self.identity_relu(dim)
+    self.L1Norm_y = self.l1norm(dim)
+    self.Composite = self.build(dim)
 
-  def forward(self, x, y):
-    v = self.V(x)
-    vp = self.V(self.A(x) + y)
-    norm_y = self.NormL1(y)
-    b = self.B(x)
-    return torch.cat([norm_y + -1*b, v + -1*vp], dim=1)
+  @staticmethod
+  def identity_relu(dim):
+    """Identity NN with ReLU activation layers, which takes input (x)
+    with dimensionality dim, and returns (x). The returned NN has
+    layer structure (Linear, ReLU, Linear).
+    """
+    net = nn.Sequential(
+      nn.Linear(dim, 2 * dim, bias=False),
+      nn.ReLU(),
+      nn.Linear(2 * dim, dim, bias=False),
+    )
+    with torch.no_grad():
+      I_ = torch.eye(dim, dim)
+      net[0].weight = nn.Parameter(torch.vstack((I_, -I_)))
+      net[2].weight = nn.Parameter(torch.hstack((I_, -I_)))
+    return net
+
+  @staticmethod
+  def identity(dim):
+    """Identity NN that takes input (x) with dimensionality dim, and
+    returns (x). The returned NN has layer structure (Linear).
+    """
+    net = nn.Linear(dim, dim, bias=False)
+    with torch.no_grad():
+      I_ = torch.eye(dim, dim)
+      net.weight = nn.Parameter(I_)
+    return net
+
+  @staticmethod
+  def broadcast(dim, k) -> nn.Linear:
+    """Broadcaster NN that takes input (x) with dimensionality dim,
+    and returns (x, ... x) (k times) of dimensionality k*dim.
+
+    Args:
+      dim: dimensionality of input.
+      k: broadcasting degree.
+    """
+    net = nn.Linear(dim, dim * k, bias=False)
+    with torch.no_grad():
+      I_ = torch.eye(dim, dim)
+      W = I_
+      for i in range(k - 1):
+        W = torch.vstack((W, I_))
+      net.weight = nn.Parameter(W)
+    return net
+
+  @staticmethod
+  def permute(dim, n, p) -> nn.Linear:
+    """Permutation NN that takes input (x_1, ..., x_n), where each
+    x_i is of dimensionality dim, and returns (x_p_1, ..., x_p_n),
+    i.e., a permutation of (x_1, ..., x_n).
+
+    Args:
+      dim: dimensionality of each x_i.
+      n: number of input values.
+      p: permutation (i.e., a list containing all integers in
+      [0, n-1]).
+    """
+    net = nn.Linear(n*dim, n*dim, bias=False)
+    with torch.no_grad():
+      W = torch.zeros(n*dim, n*dim)
+      for i in range(n):
+        r, c = dim*i, dim*p[i]
+        W[r:r+dim, c:c+dim] = torch.eye(dim, dim)
+      net.weight = nn.Parameter(W)
+    return net
+
+  @staticmethod
+  def add(dim) -> nn.Linear:
+    """Adder NN that takes inputs (x, y) with equal
+    dimensionality dim, and returns x+y (vector sum of x and y).
+
+    Args:
+      dim: dimensionality of each operand.
+    """
+    net = nn.Linear(2*dim, dim, bias=False)
+    with torch.no_grad():
+      I_ = torch.eye(dim, dim)
+      W = torch.hstack((I_, I_))
+      net.weight = nn.Parameter(W)
+    return net
+
+  @staticmethod
+  def sub(dim) -> nn.Linear:
+    """Subtractor NN that takes inputs (x, y) with equal
+    dimensionality dim, and returns x-y (vector sum of x and -y).
+
+    Args:
+      dim: dimensionality of each operand.
+    """
+    net = nn.Linear(2 * dim, dim, bias=False)
+    with torch.no_grad():
+      I_ = torch.eye(dim, dim)
+      W = torch.hstack((I_, -I_))
+      net.weight = nn.Parameter(W)
+    return net
+
+  @staticmethod
+  def l1norm(dim):
+    """L1-Norm NN that takes input (x) with dimensionality dim, and
+    returns ||x||_1 (L1-Norm of x).
+
+    Args:
+      dim: dimensionality of x.
+    """
+    net = nn.Sequential(
+      nn.Linear(dim, 2*dim, bias=False),
+      nn.ReLU(),
+      nn.Linear(2*dim, 1, bias=False),
+      nn.ReLU(),
+    )
+    with torch.no_grad():
+      I_ = torch.eye(dim, dim)
+      # Abs(x) = ReLU(x) + ReLU(-x).
+      # Net[0]: (x) -> (x, -x)
+      # Net[1]: (x, -x) -> (ReLU(x), ReLU(-x))
+      # Net[2]: (ReLU(x), ReLU(-x)) = (ReLU(x) + ReLU(-x))
+      net[0].weight = nn.Parameter(torch.vstack((I_, -I_)))
+      net[2].weight = nn.Parameter(torch.ones(1, 2*dim))
+    return net
+
+  @staticmethod
+  def vstack(layers: List[nn.Linear]) -> nn.Linear:
+    """Vertical stacking of a list of nn.Linear layers.
+
+    Args:
+      layers: list of nn.Linear-s.
+    """
+    in_ = [layer.in_features for layer in layers]
+    out = [layer.out_features for layer in layers]
+    result = nn.Linear(sum(in_), sum(out))
+    with torch.no_grad():
+      Wbs = [Wb(layer, numpy=False) for layer in layers]
+      Ws, bs = list(zip(*Wbs))
+      b = torch.cat(bs)
+      b = torch.squeeze(b, 1)
+      result.bias = nn.Parameter(b)
+      W_result = torch.Tensor(0, sum(in_))
+      for i in range(len(layers)):
+        W_padded = (
+          torch.zeros(out[i], sum(in_[:i])),
+          Ws[i],
+          torch.zeros(out[i], sum(in_[i+1:]))
+        )
+        W_padded = torch.hstack(W_padded)
+        W_result = torch.vstack((W_result, W_padded))
+      result.weight = nn.Parameter(W_result)
+    return result
+
+  @staticmethod
+  def hstack(layers: List[nn.Linear]) -> nn.Linear:
+    """Horizontal stacking a list of nn.Linear layers.
+
+    Note that return value of this function is different with
+    nn.Sequential(*layers), as hstack(layers) return a single
+    nn.Linear which computes the same function as
+    nn.Sequential(*layers).
+
+    Args:
+      layers: list of nn.Linear-s.
+    """
+    W_res, b_res = Wb(layers[0], numpy=False)
+    for i in range(1, len(layers)):
+      W, b = Wb(layers[i], numpy=False)
+      W_res, b_res = W @ W_res, b + W @ b_res
+    b_res = torch.squeeze(b_res, dim=1)
+
+    out, in_ = W_res.shape
+    result = nn.Linear(in_, out)
+    with torch.no_grad():
+      result.weight = nn.Parameter(W_res)
+      result.bias = nn.Parameter(b_res)
+    return result
+
+  def contract(self, layers) -> nn.Sequential:
+    """Contracted NN from nn.Linear and nn.ReLU layers.
+
+    The returned NN is 'contracted', as all consecutive Linear layers
+    are stacked together; so the resulting NN is structured as
+    (Linear ReLU)* Last, where Last is either nothing or a Linear.
+    """
+
+    def xor(x, y):
+      return type(x) != type(y)
+
+    # Assumption. All layers are either Linear or ReLU.
+    assert all(
+      isinstance(layer, nn.ReLU)
+      or isinstance(layer, nn.Linear)
+      for layer in layers
+    )
+
+    # Zero-Padding
+    layers = [None] + layers + [None]
+    # Changes is all indices `i` in the zero-padded layers such that
+    # xor(layers[i], layers[i+1]) = True
+    changes = []
+    for i in range(len(layers)-1):
+      if xor(layers[i], layers[i+1]):
+        changes.append(i)
+    #  There are even number of changes in the zero-padded layers.
+    assert len(changes) % 2 == 0
+    result = nn.Sequential()
+    for i in range(len(changes)):
+      if i % 2 == 1:
+        result.append(nn.ReLU())
+        continue
+      start, end = changes[i]+1, changes[i+1]
+      linears = layers[start:end+1]
+      result.append(self.hstack(linears))
+    return result
+
+  def build(self, dim):
+    # Check variables.
+    x, y = torch.rand(dim), torch.rand(dim)
+    xy = torch.cat((x, y))
+    result = nn.Sequential()
+    # Input layout = (x, y)
+    result.append(
+      self.vstack(
+        [self.broadcast(dim, 2), self.identity(dim)]
+      )
+    )
+    # Input layout = (x, x, y)
+    assert torch.equal(result(xy), torch.cat((x, x, y)))
+    # Assertion. A, I_x, and I_y are all structured as
+    # (Linear, ReLU, Linear).
+    assert all(
+      isinstance(l0, nn.Linear)
+      for l0 in (self.A[0], self.I_x[0], self.I_y[0])
+    ) and all(
+      isinstance(l1, nn.ReLU)
+      for l1 in (self.A[1], self.I_x[1], self.I_y[1])
+    ) and all(
+      isinstance(l2, nn.Linear)
+      for l2 in (self.A[2], self.I_x[2], self.I_y[2])
+    )
+    result.append(
+      self.vstack([self.A[0], self.I_x[0], self.I_y[0]])
+    )
+    result.append(nn.ReLU())
+    result.append(
+      self.vstack([self.A[2], self.I_x[2], self.I_y[2]])
+    )
+    # Input layout = (A(x), x, y)
+    assert torch.equal(result(xy), torch.cat((self.A(x), x, y)))
+    result.append(self.permute(dim, 3, [0, 2, 1]))
+    # Input layout = (A(x), y, x)
+    assert torch.equal(result(xy), torch.cat((self.A(x), y, x)))
+    result.append(
+      self.vstack([
+        self.identity(dim),
+        self.broadcast(dim, 2),
+        self.identity(dim),
+      ])
+    )
+    # Input layout = (A(x), y, y, x)
+    assert torch.equal(result(xy), torch.cat((self.A(x), y, y, x)))
+    result.append(
+      self.vstack(
+        [self.add(dim), self.identity(dim), self.identity(dim)]
+      )
+    )
+    # Input layout = (A(x)+y, y, x)
+    assert torch.equal(result(xy), torch.cat((self.A(x)+y, y, x)))
+    result.append(
+      self.vstack([
+        self.identity(dim),
+        self.identity(dim),
+        self.broadcast(dim, 2),
+      ])
+    )
+    # Input layout = (A(x)+y, y, x, x)
+    assert torch.equal(result(xy), torch.cat((self.A(x)+y, y, x, x)))
+    result.append(self.permute(dim, 4, [2, 0, 1, 3]))
+    # Input layout = (x, A(x)+y, y, x)
+    assert torch.equal(result(xy), torch.cat((x, self.A(x)+y, y, x)))
+    # Assertion. V, V1, B, and L1_Norm_y are all structured as
+    # (Linear, ReLU, Linear, ReLU).
+    assert all(
+      isinstance(l0, nn.Linear)
+      for l0 in (self.V[0], self.V1[0], self.B[0], self.L1Norm_y[0])
+    ) and all(
+      isinstance(l1, nn.ReLU)
+      for l1 in (self.V[1], self.V1[1], self.B[1], self.L1Norm_y[1])
+    ) and all(
+      isinstance(l2, nn.Linear)
+      for l2 in (self.V[2], self.V1[2], self.B[2], self.L1Norm_y[2])
+    ) and all(
+      isinstance(l1, nn.ReLU)
+      for l1 in (self.V[3], self.V1[3], self.B[3], self.L1Norm_y[3])
+    )
+    result.append(
+      self.vstack([
+        self.V[0], self.V1[0], self.L1Norm_y[0], self.B[0]
+      ])
+    )
+    result.append(nn.ReLU())
+    result.append(
+      self.vstack([
+        self.V[2], self.V1[2], self.L1Norm_y[2], self.B[2]
+      ])
+    )
+    result.append(nn.ReLU())
+    # Input layout = (V(x), V(A(x)+y), ||y||_1, B(x))
+    assert torch.equal(
+      result(xy),
+      torch.cat((
+        self.V(x),
+        self.V(self.A(x)+y),
+        torch.unsqueeze(torch.sum(torch.abs(y)), 0),
+        self.B(x)
+      ))
+    )
+    result.append(self.vstack([self.sub(1), self.sub(1)]))
+    # Input layout = (V(x) - V(A(x)+y), ||y||_1 - B(x))
+    assert torch.equal(
+      result(xy),
+      torch.cat((
+        self.V(x) - self.V(self.A(x)+y),
+        torch.unsqueeze(torch.sum(torch.abs(y)), 0) - self.B(x)
+      ))
+    )
+
+    return self.contract(list(result.children()))
+
+  def forward(self, xy):
+    return self.Composite(xy)
 
 
 class Verifier_Reach_ABV(Verifier):
@@ -441,9 +758,22 @@ class Verifier_Reach_ABV(Verifier):
     self.A, self.B, self.V = models
     self.env = env
     self.F = F
+    self.delta = 0.1
 
   def chk(self):
-    cexs = [self.chk_abst(), self.chk_dec()]
+    RATIO = 2
+    logger.info(
+      'Checking the Abstraction-Bound condition' +
+      f'(delta={self.delta}) ...')
+    cex_abst = self.chk_abst()
+    self.delta *= RATIO
+
+    logger.info('Checking the Decrease condition ...')
+    cex_dec = self.chk_dec()
+
+    logger.info(f'Abstraction-Bound CEx={cex_abst}')
+    logger.info(f'Decrease CEx={cex_dec}')
+    cexs = [cex_abst, cex_dec]
     return [cex for cex in cexs if len(cex) != 0]
 
   def chk_abst(self):
@@ -453,7 +783,6 @@ class Verifier_Reach_ABV(Verifier):
     an NRA query), this method always uses DReal, and need not be
     implemented in subclasses of Verifier_Reach_ABV.
     """
-    logger.info('Checking the Abstraction-Bound condition ...')
     dim = self.env.dim
     x = ColumnVector('x_', self.env.dim)
 
@@ -480,10 +809,9 @@ class Verifier_Reach_ABV(Verifier):
     var = [c.atoms(sp.Symbol) for c in constraints]
     var = set().union(*var)
     var = {v: dreal.Variable(v.name) for v in var}
-    # logger.debug(var)
     constraints = [sympy_to_dreal(c, var) for c in constraints]
     formula = dreal.And(*constraints)
-    return solve_dreal(formula, x_dreal)
+    return solve_dreal(formula, x_dreal, delta=self.delta)
 
   def dec_constrains(self):
     """Symbolic constrains for encoding the Decrease Condition."""
@@ -512,10 +840,9 @@ class Verifier_Reach_ABV(Verifier):
     problem += a_cs
     problem += va_cs
     problem.append(v_o[0] <= va_o[0])
-    # logger.debug('bounds=' + pprint.pformat(bounds))
-    # logger.debug('problem=' + pprint.pformat(problem))
+    logger.debug('bounds=' + pprint.pformat(bounds))
+    logger.debug('problem=' + pprint.pformat(problem))
     constraints = bounds + problem
-    # logger.debug(constraints)
     return constraints
 
   @abstractmethod
@@ -527,48 +854,50 @@ class Verifier_Reach_ABV_Marabou(Verifier_Reach_ABV):
   def chk_dec(self):
     abv = ABVComposite(
       self.A, self.B, self.V, self.env.dim)
-    x, y = torch.randn(1, 2), torch.randn(1, 2)
-    o = abv(x, y)
+    abv = abv.Composite
+    logger.debug(f'Composite. {abv}')
+    dim = self.env.dim
+    xy = torch.randn(1, 2 * dim)
 
     filename = 'marabou_drafts/abv.onnx'
     torch.onnx.export(
-      abv, (x, y), filename,
-      input_names=['x', 'y'],
+      abv, xy, filename,
+      input_names=['xy'],
       output_names=['o'])
 
     network = Marabou.read_onnx(filename)
     # Path(filename).unlink()
 
-    x, y = network.inputVars[0][0], network.inputVars[1][0]
+    xy = network.inputVars[0][0]
     o = network.outputVars[0][0]
-    logger.debug(f'x = {x}')
-    logger.debug(f'y = {y}')
+    logger.debug(f'x = {xy}')
     logger.debug(f'o = {o}')
 
     bnd = self.env.bnd
     dim = self.env.dim
     low = bnd.low.numpy()
     high = bnd.high.numpy()
-
     # Bounding y as well to avoid having infinite bounds.
-    for i in range(dim):
-      network.setLowerBound(x[i], low[i])
-      network.setUpperBound(x[i], high[i])
-      network.setLowerBound(y[i], low[i])
-      network.setUpperBound(y[i], high[i])
+    for i in range(2*dim):
+      network.setLowerBound(xy[i], low[i % dim])
+      network.setUpperBound(xy[i], high[i % dim])
+      network.setLowerBound(xy[i], low[i % dim])
+      network.setUpperBound(xy[i], high[i % dim])
 
+    # Bounding x to not be in the target region.
     tgt = self.env.tgt
     low = tgt.low.numpy()
     high = tgt.high.numpy()
     for i in range(dim):
       # eq1. 1 * x[i] >= high[i]
       eq1 = MarabouCore.Equation(MarabouCore.Equation.GE)
-      eq1.addAddend(1, x[i])
+      eq1.addAddend(1, xy[i])
       eq1.setScalar(high[i])
       # eq2. 1 * x[i] <= low[i]
       eq2 = MarabouCore.Equation(MarabouCore.Equation.LE)
-      eq2.addAddend(1, x[i])
+      eq2.addAddend(1, xy[i])
       eq2.setScalar(low[i])
+      # eq1 \/ eq2
       network.addDisjunctionConstraint([[eq1], [eq2]])
 
     network.setUpperBound(o[0], 0.0)
@@ -578,18 +907,17 @@ class Verifier_Reach_ABV_Marabou(Verifier_Reach_ABV):
 
     network.saveQuery('marabou_drafts/abv-query.txt')
     options = Marabou.createOptions(
-      verbosity=0,
-      tighteningStrategy='none',
+      verbosity=1,
+      # tighteningStrategy='none',
     )
     chk, vals, _stats = network.solve(options=options)
     if chk == 'sat':
-      return [vals[x[i]] for i in range(dim)]
-    return None
+      return [vals[xy[i]] for i in range(dim)]
+    return []
 
 
 class Verifier_Reach_ABV_Z3(Verifier_Reach_ABV):
   def chk_dec(self):
-    logger.info('Checking the Decrease condition ...')
     constraints = self.dec_constrains()
     var = [c.atoms(sp.Symbol) for c in constraints]
     var = set().union(*var)
@@ -602,7 +930,6 @@ class Verifier_Reach_ABV_Z3(Verifier_Reach_ABV):
 
 class Verifier_Reach_ABV_CVC5(Verifier_Reach_ABV):
   def chk_dec(self):
-    logger.info('Checking the Decrease condition ...')
     constraints = self.dec_constrains()
     var = [c.atoms(sp.Symbol) for c in constraints]
     var = set().union(*var)

@@ -1,7 +1,10 @@
+import copy
 from typing import List, Callable
 
 import torch 
-import torch.nn as nn 
+import torch.nn as nn
+
+from verifier import Wb
 
 
 def binary_search(a, n, f):
@@ -64,3 +67,117 @@ def label_strong_dec(
     else:
       P[idx].append(X[i])
   return P
+
+
+def nn_norm_l1(dim: int):
+  """NN to compute L1 norm of a vector [x1, ..., xk], where k = dim.
+
+  Args:
+    dim: dimensionality of input vector.
+  """
+  net = nn.Sequential(
+    nn.Linear(dim, 2 * dim, bias=False),
+    nn.ReLU(),
+    nn.Linear(4, 1, bias=False),
+  )
+
+  with torch.no_grad():
+    net[0].weight = nn.Parameter(
+      torch.hstack([torch.eye(2, 2), torch.eye(2, 2) * -1]).T)
+    net[2].weight = nn.Parameter(torch.ones(1, 4))
+
+  return net
+
+
+class ABVComposite_V1(nn.Module):
+  """Composite network containing A, B, and V. This network takes
+  (x, y) as input, where x is a sample from the state space and y is
+  an error variable, and returns the following as output:
+  ( ||y||_1 - B(x), V(x) - V(A(x) + y) )  (Eq. 1)
+
+  Assumption. Both x and y are passed as 2D-Tensors with only one
+  row and matching number of columns. If this assumption is true,
+  output is also a 2D-Tensor with only one row and two columns.
+  """
+
+  def __init__(self, A, B, V, dim):
+    super().__init__()
+    self.A = A
+    self.B = B
+    self.V = V
+    self.NormL1 = nn_norm_l1(dim)
+
+  def forward(self, x, y):
+    v = self.V(x)
+    vp = self.V(self.A(x) + y)
+    norm_y = self.NormL1(y)
+    b = self.B(x)
+    return torch.cat([norm_y + -1 * b, v + -1 * vp], dim=1)
+
+
+def v_compose(models):
+  """Vertical composition of NNs with identical layer structure.
+
+  Args:
+    models: a list of nn.Sequential-s
+  """
+  assert len(models) > 0
+  result = nn.Sequential()
+  n_layers = len(models[0])
+  for i in range(n_layers):
+    lyr = models[0][i]
+    match lyr:
+      case nn.ReLU():
+        result.append(nn.ReLU())
+      case nn.Linear():
+        in_f, out_f = lyr.in_features, lyr.out_features
+        Wbs = [Wb(m[i], numpy=False) for m in models]
+        Ws, bs = list(zip(*Wbs))
+        W, b = torch.vstack(Ws), torch.cat(bs)
+        linear = nn.Linear(in_f, out_f)
+        with torch.no_grad():
+          linear.weight = nn.Parameter(W)
+          linear.bias = nn.Parameter(b)
+        result.append(linear)
+      case _:
+        raise NotImplementedError()
+  return result
+
+
+class ABVComposite_V2(nn.Module):
+  """Composite network containing A, B, and V. This network takes
+  (x, y) as input, where x is a sample from the state space and y is
+  an error variable, and returns the following as output:
+  ( ||y||_1 - B(x), V(x) - V(A(x) + y) )
+
+  This network consists of A, B, and V along with paddings (identity
+  function) and simple operations such as addition, and L1-norm
+  computation. The resulting network shall look like a simple neural
+  network with Linear and ReLU layers.
+
+  Assumption. Both x and y are passed as 2D-Tensors with only one
+  row and matching number of columns. If this assumption is true,
+  output is also a 2D-Tensor with only one row and two columns.
+  """
+  def __init__(self, A, B, V, dim):
+    super().__init__()
+    self.A = A
+    self.B = B
+    self.V = V
+    self.V1 = copy.deepcopy(V)
+    self.I_x = self.identity_relu(dim)
+    self.I_y = self.identity_relu(dim)
+    self.L1Norm_y = self.l1norm(dim)
+
+  def forward(self, x, y):
+    # TODO. update to use the homogeneous NN.
+    Ax = self.A(x)
+    x1 = self.I_x(x)
+    y1 = self.I_y(y)
+    Vx = self.V(x1)
+    VAxy = self.V1(Ax + y1)
+    Bx = self.B(x1)
+    L1y = self.L1Norm_y(y1)
+
+    return torch.cat([L1y + -1 * Bx, Vx + -1 * VAxy], dim=1)
+

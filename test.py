@@ -1,21 +1,21 @@
 import unittest 
 
-import z3 
-import numpy as np
+import z3
 import sympy as sp
 import torch
 import torch.nn as nn
 
 from envs import SuspendedPendulum
 from envs import F_SuspendedPendulum
-from verifier import X, ReLU, Net, sympy_to_z3
+from learner import nn_A_2d, nn_B_2d, nn_V_2d
+from verifier import ColumnVector, ReLU, Net, ABVComposite
+from verifier import sympy_to_z3
 
 
 class TestSymPyUtilFuncs(unittest.TestCase):
   """Test suite for SymPy-based utility functions."""
-
   def test_x(self):
-    x = X(3)
+    x = ColumnVector('x', 3)
     self.assertEqual(len(x), 3)
   
   def test_relu(self):
@@ -23,7 +23,7 @@ class TestSymPyUtilFuncs(unittest.TestCase):
     ReLU(x)
 
   def test_matmul(self):
-    x = X(3)
+    x = ColumnVector('x', 3)
     A = sp.Matrix([
       [1, 2, 3], 
       [4, 5, 6],
@@ -44,21 +44,20 @@ class TestSymPyUtilFuncs(unittest.TestCase):
       nn.ReLU()
     )
 
-    net_sp = Net(net, X(3))
+    net_sp = Net(net, ColumnVector('x', 3))
     self.assertEqual(len(net_sp), 2)
 
 
 class TestSymPyToZ3Translations(unittest.TestCase):
-
   def test_matmul(self):
-    x_sp = X(3)
+    x_sp = ColumnVector('x', 3)
     x_z3 = z3.RealVector('x', 3)
-    # A will, by default, be a column vector.
+    # Matrix A will be, by default, a column vector.
     A = sp.Matrix([1, 2, 3])
     assert A.shape == (3, 1)
     z3expr = sympy_to_z3(
       (A.T @ x_sp)[0], 
-      {x_sp[i]: x_z3[i] for i in range(3)} )
+      {x_sp[i]: x_z3[i] for i in range(3)})
     self.assertEqual(z3expr, x_z3[0] + 2*x_z3[1] + 3*x_z3[2])
 
   def test_net(self):
@@ -71,16 +70,14 @@ class TestSymPyToZ3Translations(unittest.TestCase):
       nn.ReLU()
     )
 
-    x_sp = X(3)
-    x_z3 = z3.RealVector('x', 3)
-    net_sp = Net(net, X(3))
-    net_z3 = sympy_to_z3(
-      net_sp[0],
-      {x_sp[i]: x_z3[i] for i in range(3)} )
+    net_o, net_cs = Net(net, ColumnVector('x', 3))
+    var = [c.atoms(sp.Symbol) for c in net_cs]
+    var = set().union(*var)
+    var = {v: z3.Real(v.name) for v in var}
+    [sympy_to_z3(net_c, var) for net_c in net_cs]
 
 
 class TestEnvironments(unittest.TestCase):
-  
   def test_suspended_pendulum(self):
     pendulum = SuspendedPendulum()
     x = torch.Tensor([-3.14, 4])
@@ -91,8 +88,31 @@ class TestEnvironments(unittest.TestCase):
   
   def test_f_suspended_pendulum(self):
     x = sp.Matrix(sp.symbols('x_0 x_1'))
-    pendulum = SuspendedPendulum()
+    SuspendedPendulum()
     F_SuspendedPendulum(x)
+
+
+class TestABVComposite(unittest.TestCase):
+  def test_composite(self):
+    A, B, V = nn_A_2d(), nn_B_2d(), nn_V_2d()
+    abv = ABVComposite(A, B, V, 2)
+    x, y = torch.rand(2), torch.rand(2)
+    xy = torch.cat((x, y))
+    expected = torch.Tensor(
+      [V(x) - V(A(x) + y), torch.sum(torch.abs(y)) - B(x)]
+    )
+    result = abv(xy)
+    self.assertTrue(torch.equal(expected, result))
+
+  def test_hstack(self):
+    l1, l2 = nn.Linear(2, 4), nn.Linear(4, 3)
+    l_stk = ABVComposite.hstack([l1, l2])
+    x = torch.rand(2)
+    expected = l2(l1(x))
+    result = l_stk(x)
+    # Using torch.allclose to account for floating-point errors
+    self.assertTrue(torch.allclose(expected, result))
+
 
 if __name__ == '__main__':
     unittest.main()

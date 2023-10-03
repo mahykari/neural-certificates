@@ -33,9 +33,9 @@ def nn_A_2d():
   """Utility function to generate a default abstraction NN for a 
   2D space."""
   return nn.Sequential(
-    nn.Linear(2, 16),
+    nn.Linear(2, 4),
     nn.ReLU(),
-    nn.Linear(16, 2),
+    nn.Linear(4, 2),
   )
 
 
@@ -50,9 +50,9 @@ def nn_B_2d():
   || f - A ||.
   """
   return nn.Sequential(
-    nn.Linear(2, 16),
+    nn.Linear(2, 4),
     nn.ReLU(),
-    nn.Linear(16, 1),
+    nn.Linear(4, 1),
     nn.ReLU()
   )
 
@@ -186,33 +186,32 @@ def sample_ball(dim: int, n_samples, int=100):
 
 
 class Learner_Reach_ABV(Learner):
-  EPS_DEC = 1e0
-  LR, WeIGHT_DECAY = 3e-3, 1e5
-
   def __init__(self, env, models):
     self.env = env
     # A, B, V: Abstraction, Bound, and Certificate NN.
     self.A, self.B, self.V = models
+    self.learning_rate = 1e-3
+    self.weight_decay = 1e-5
   
   def fit(self, S):
     # N_EPOCH, N_BATCH = 2048, 50
-    N_EPOCH, N_BATCH = 512, 50  # For debugging purposes
-    LR, WEIGHT_DECAY = 3e-3, 1e-5
+    N_EPOCH, N_BATCH = 64, 50  # For debugging purposes
+    RATIO = 2
     
     state_ld = D.DataLoader(
-      S, batch_size= len(S) // N_BATCH, shuffle=True)
+      S, batch_size=len(S) // N_BATCH, shuffle=True)
 
     optimizer = optim.Adam(
       list(self.A.parameters())
       + list(self.B.parameters())
       + list(self.V.parameters()),
-      lr=LR,
-      weight_decay=WEIGHT_DECAY
+      lr=self.learning_rate,
+      weight_decay=self.weight_decay,
     )
     
     for e in range(N_EPOCH+1):
       epoch_loss = 0
-      ball = sample_ball(2, 100)
+      ball = sample_ball(2, 1000)
       state_it = iter(state_ld)
       for _ in range(N_BATCH):
         states = next(state_it)
@@ -225,6 +224,8 @@ class Learner_Reach_ABV(Learner):
         logger.debug(
           f'Epoch {e:>5}. '
           + f'Loss={epoch_loss/N_BATCH:>16.6f}')
+
+    self.learning_rate /= RATIO
 
   def loss_abst(self, S):
     f_vec = torch.vmap(self.env.f)

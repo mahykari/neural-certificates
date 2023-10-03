@@ -5,7 +5,9 @@ import torch
 
 from envs import (
   Spiral, F_Spiral,
-  SuspendedPendulum, F_SuspendedPendulum)
+  SuspendedPendulum, F_SuspendedPendulum,
+  Unstable2D, F_Unstable2D,
+)
 from learner import Learner_Reach_V, Learner_Reach_ABV
 from verifier import (
   Verifier_Reach_V,
@@ -26,11 +28,13 @@ MAX_TRAIN_ITER = 10
 ENVS = {
   'Spiral': Spiral,
   'SuspendedPendulum': SuspendedPendulum,
+  'Unstable1D': Unstable2D
 }
 
 FS = {
   'Spiral': F_Spiral,
   'SuspendedPendulum': F_SuspendedPendulum,
+  'Unstable1D': F_Unstable2D,
 }
 
 LEARNERS = {
@@ -70,14 +74,14 @@ def main():
   env, F_env = ENVS[envname](), FS[envname]
 
   S = env.sample()
+  models = [m() for m in MODELS[modelcomb]]
+  learner = LEARNERS[modelcomb](env, models)
+  verifier = VERIFIERS[modelcomb][solver](models, env, F_env)
   # CEGIS loop
   for i in range(MAX_CEGIS_ITER):
     N = len(S)
     logger.info(f'Iteration {i}. |S|={len(S)}')
-    models = [m() for m in MODELS[modelcomb]]
-    learner = LEARNERS[modelcomb](env, models)
     learner.fit(S)
-    verifier = VERIFIERS[modelcomb][solver](models, env, F_env)
     # Cexs is a list of points.
     cexs = verifier.chk()
     if not cexs:
@@ -85,7 +89,6 @@ def main():
       # TODO. Export models.
       break
     else:
-      logger.debug(f'CExs={cexs}')
       cexs = [
         torch.randn(N // 10, env.dim) + torch.Tensor(cex)
         for cex in cexs]
