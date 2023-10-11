@@ -1,0 +1,187 @@
+import subprocess
+
+import torch
+import torch.nn as nn
+
+import sympy as sp
+import dreal
+
+from envs import Unstable2D, F_Unstable2D
+from verifier import Net, BoundIn, ColumnVector, Norm_L1
+
+
+def sympy_to_dreal(expr, var):
+  """Translate SymPy expression to DReal.
+
+  Args:
+    expr: SymPy expression.
+    var: mapping from SymPy Symbols to DReal Variables
+  """
+  match expr:
+    case sp.Symbol():
+      return var[expr]
+    case sp.Number():
+      return str(round(expr, 8))
+    case sp.Add():
+      args = [sympy_to_dreal(arg, var) for arg in expr.args]
+      args = ' '.join(args)
+      return f'(+ {args})'
+    case sp.Mul():
+      args = [sympy_to_dreal(arg, var) for arg in expr.args]
+      args = ' '.join(args)
+      return f'(* {args})'
+    case sp.And():
+      args = [sympy_to_dreal(arg, var) for arg in expr.args]
+      args = ' '.join(args)
+      return f'(and {args})'
+    case sp.Or():
+      args = [sympy_to_dreal(arg, var) for arg in expr.args]
+      args = ' '.join(args)
+      return f'(or {args})'
+    case sp.GreaterThan():
+      assert len(expr.args) == 2
+      left, right = [sympy_to_dreal(arg, var) for arg in expr.args]
+      return f'(>= {left} {right})'
+    case sp.LessThan():
+      assert len(expr.args) == 2
+      left, right = [sympy_to_dreal(arg, var) for arg in expr.args]
+      return f'(<= {left} {right})'
+    case sp.StrictGreaterThan():
+      assert len(expr.args) == 2
+      left, right = [sympy_to_dreal(arg, var) for arg in expr.args]
+      return f'(> {left} {right})'
+    case sp.StrictLessThan():
+      assert len(expr.args) == 2
+      left, right = [sympy_to_dreal(arg, var) for arg in expr.args]
+      return f'(< {left} {right})'
+    case sp.Eq():
+      assert len(expr.args) == 2
+      left, right = expr.args
+      ################################################################
+      if isinstance(right, sp.Abs):
+        right = right.args[0]
+        left, right = sympy_to_dreal(left, var), sympy_to_dreal(right, var)
+        impl1 = f'(=> (>= {right} 0) (= {left} {right}))'
+        impl2 = f'(=> (< {right} 0) (= {left} (* -1 {right})))'
+        return f'(and {impl1} {impl2})'
+      if isinstance(right, sp.Function) and right.name == 'ReLU':
+        right = right.args[0]
+        left, right = sympy_to_dreal(left, var), sympy_to_dreal(right, var)
+        impl1 = f'(=> (>= {right} 0) (= {left} {right}))'
+        impl2 = f'(=> (< {right} 0) (= {left} 0))'
+        return f'(and {impl1} {impl2})'
+      ################################################################
+      left, right = sympy_to_dreal(left, var), sympy_to_dreal(right, var)
+      return f'(= {left} {right})'
+    # Functions
+    case sp.Abs():
+      arg = sympy_to_dreal(expr.args[0], var)
+      return f'(ite (>= {arg} 0) {arg} (* -1 {arg}))'
+    case sp.sin():
+      assert len(expr.args) == 1
+      arg = sympy_to_dreal(expr.args[0], var)
+      return f'(sin {arg})'
+    case sp.cos():
+      assert len(expr.args) == 1
+      arg = sympy_to_dreal(expr.args[0], var)
+      return f'(cos {arg})'
+    case sp.exp():
+      assert len(expr.args) == 1
+      arg = sympy_to_dreal(expr.args[0], var)
+      return f'(exp {arg})'
+    case sp.Function() if expr.name == 'ReLU':
+      arg = sympy_to_dreal(expr.args[0], var)
+      return f'(ite (>= {arg} 0) {arg} 0)'
+    case _:
+      raise NotImplementedError(type(expr))
+
+
+A = nn.Sequential(
+  nn.Linear(2, 4, bias=False),
+  nn.ReLU(),
+  nn.Linear(4, 2, bias=False),
+)
+
+with torch.no_grad():
+  W0 = torch.vstack((
+    torch.eye(2, 2),
+    torch.eye(2, 2) * -1,
+  ))
+
+  W2 = torch.hstack((
+    torch.eye(2, 2) * -1.1,
+    torch.eye(2, 2) * +1.1,
+  ))
+
+  A[0].weight = nn.Parameter(W0)
+  A[2].weight = nn.Parameter(W2)
+
+
+env = Unstable2D()
+F = F_Unstable2D
+
+dim = env.dim
+x = ColumnVector('x_', dim)
+
+bounds = BoundIn(env.bnd, x)
+problem = []
+# err = || A(x) - f(x) ||_1
+a_o, a_cs = Net(A, x, 'A')
+problem += a_cs
+f_o, f_cs = F(x)
+problem += f_cs
+err = sp.Symbol('err')
+problem.append(sp.Eq(err, Norm_L1(a_o - f_o)))
+# b = B(x). We need to reshape b to be a scalar, rather than a
+# matrix with only one element.
+# b_o, b_cs = Net(self.B, x, 'B')
+# problem += b_cs
+# assert b_o.shape == (1, 1)
+# b_o = b_o[0]
+problem.append(err > 0.001)
+
+x_dreal = [dreal.Variable(f'x_{i}') for i in range(dim)]
+constraints = bounds + problem
+var = [c.atoms(sp.Symbol) for c in constraints]
+var = set().union(*var)
+var = {v: v.name for v in var}
+constraints = [sympy_to_dreal(c, var) for c in constraints]
+# print(constraints)
+
+query = """(set-logic QF_NRA)
+(set-option :precision 0.001)
+
+"""
+
+for v in sorted(var.values()):
+  query += f'(declare-fun {v} () Real)\n'
+
+query += """(declare-fun d_0 () Real)
+(declare-fun d_1 () Real)
+(declare-fun n_0 () Real)
+(declare-fun n_1 () Real)
+"""
+
+query += '\n\n'
+
+for c in constraints:
+  query += f'(assert {c})\n'
+
+query += """
+(check-sat)
+; (get-model)
+(exit)
+"""
+
+with open('dreal-query.smt2', 'w') as f:
+  f.write(query)
+
+DREAL_VERSION = '4.21.06.2'
+DREAL_BIN = f'/opt/dreal/{DREAL_VERSION}/bin/dreal'
+result = subprocess.run(
+  [DREAL_BIN, 'dreal-query.smt2'],
+  capture_output=True,
+  timeout=60,
+)
+
+print(result)
