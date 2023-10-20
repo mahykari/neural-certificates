@@ -1,3 +1,4 @@
+from typing import List 
 import subprocess
 
 import torch
@@ -7,7 +8,22 @@ import sympy as sp
 import dreal
 
 from envs import Unstable2D, F_Unstable2D
-from verifier import Net, BoundIn, ColumnVector, Norm_L1
+from verifier import Net, BoundIn, ColumnVector
+
+def Norm_L1(x) -> (sp.Symbol, List[sp.Expr]):
+  # || x ||_1 = [1 ... 1] * Abs(x). We take the only element
+  # in the 1x1 result Matrix.
+  d = ColumnVector('d_', len(x))
+  norm_o = sp.Symbol('norm_o')
+  norm_cs = [
+    # sp.Eq(d[i], sp.Abs(x[i]))
+    sp.Eq(d[i], x[i])
+    for i in range(len(x))
+  ] + [
+    sp.Eq(norm_o, (sp.ones(1, len(x)) @ d)[0])
+  ]
+  
+  return norm_o, norm_cs
 
 
 def sympy_to_dreal(expr, var):
@@ -97,25 +113,28 @@ def sympy_to_dreal(expr, var):
 
 
 A = nn.Sequential(
-  nn.Linear(2, 4, bias=False),
-  nn.ReLU(),
-  nn.Linear(4, 2, bias=False),
+  # nn.Linear(2, 4, bias=False),
+  # nn.ReLU(),
+  # nn.Linear(4, 2, bias=False),
+  nn.Linear(2, 2, bias=False)
 )
 
 with torch.no_grad():
-  W0 = torch.vstack((
-    torch.eye(2, 2),
-    torch.eye(2, 2) * -1,
-  ))
+  # W0 = torch.vstack((
+  #   torch.eye(2, 2),
+  #   torch.eye(2, 2) * -1,
+  # ))
 
-  W2 = torch.hstack((
-    torch.eye(2, 2) * -1.1,
-    torch.eye(2, 2) * +1.1,
-  ))
+  # W2 = torch.hstack((
+  #   torch.eye(2, 2) * -1.1,
+  #   torch.eye(2, 2) * +1.1,
+  # ))
 
+  # A[0].weight = nn.Parameter(W0)
+  # A[2].weight = nn.Parameter(W2)
+
+  W0 = torch.eye(2, 2) * -1.1
   A[0].weight = nn.Parameter(W0)
-  A[2].weight = nn.Parameter(W2)
-
 
 env = Unstable2D()
 F = F_Unstable2D
@@ -131,7 +150,9 @@ problem += a_cs
 f_o, f_cs = F(x)
 problem += f_cs
 err = sp.Symbol('err')
-problem.append(sp.Eq(err, Norm_L1(a_o - f_o)))
+norm_o, norm_cs = Norm_L1(a_o - f_o)
+problem += norm_cs
+problem.append(sp.Eq(err, norm_o))
 # b = B(x). We need to reshape b to be a scalar, rather than a
 # matrix with only one element.
 # b_o, b_cs = Net(self.B, x, 'B')
@@ -148,7 +169,7 @@ var = {v: v.name for v in var}
 constraints = [sympy_to_dreal(c, var) for c in constraints]
 # print(constraints)
 
-query = """(set-logic QF_NRA)
+query = """; (set-logic QF_NRA)
 (set-option :precision 0.001)
 
 """
@@ -156,11 +177,11 @@ query = """(set-logic QF_NRA)
 for v in sorted(var.values()):
   query += f'(declare-fun {v} () Real)\n'
 
-query += """(declare-fun d_0 () Real)
-(declare-fun d_1 () Real)
-(declare-fun n_0 () Real)
-(declare-fun n_1 () Real)
-"""
+# query += """(declare-fun d_0 () Real)
+# (declare-fun d_1 () Real)
+# (declare-fun n_0 () Real)
+# (declare-fun n_1 () Real)
+# """
 
 query += '\n\n'
 
