@@ -7,8 +7,44 @@ import torch.nn as nn
 import sympy as sp
 import dreal
 
-from envs import Unstable2D, F_Unstable2D
+from envs import Env, Box 
 from verifier import Net, BoundIn, ColumnVector
+
+
+RATIO = 1
+
+
+class Unstable1D(Env):
+  dim = 1
+  bnd = Box(
+    low=torch.Tensor([-3.15]),
+    high=torch.Tensor([3.15]),
+  )
+
+  tgt = Box(
+    low=torch.Tensor([-0.1]),
+    high=torch.Tensor([0.1]),
+  )
+
+  def nxt(self, x):
+    return torch.sin(x)
+
+  f = nxt
+
+  @staticmethod
+  def sample():
+    S = torch.randn(160000, 2)
+    return S
+
+
+def F_Unstable1D(x):
+  fx = [sp.Symbol('fx_0')]
+  fx = sp.Matrix(fx)
+  return fx, [
+    # sp.Eq(fx[0], sp.sin(x[0]))
+    sp.Eq(fx[0], RATIO * x[0]),
+  ]
+
 
 def Norm_L1(x) -> (sp.Symbol, List[sp.Expr]):
   # || x ||_1 = [1 ... 1] * Abs(x). We take the only element
@@ -16,8 +52,7 @@ def Norm_L1(x) -> (sp.Symbol, List[sp.Expr]):
   d = ColumnVector('d_', len(x))
   norm_o = sp.Symbol('norm_o')
   norm_cs = [
-    # sp.Eq(d[i], sp.Abs(x[i]))
-    sp.Eq(d[i], x[i])
+    sp.Eq(d[i], sp.Abs(x[i]))
     for i in range(len(x))
   ] + [
     sp.Eq(norm_o, (sp.ones(1, len(x)) @ d)[0])
@@ -73,26 +108,15 @@ def sympy_to_dreal(expr, var):
     case sp.Eq():
       assert len(expr.args) == 2
       left, right = expr.args
-      ################################################################
-      if isinstance(right, sp.Abs):
-        right = right.args[0]
-        left, right = sympy_to_dreal(left, var), sympy_to_dreal(right, var)
-        impl1 = f'(=> (>= {right} 0) (= {left} {right}))'
-        impl2 = f'(=> (< {right} 0) (= {left} (* -1 {right})))'
-        return f'(and {impl1} {impl2})'
-      if isinstance(right, sp.Function) and right.name == 'ReLU':
-        right = right.args[0]
-        left, right = sympy_to_dreal(left, var), sympy_to_dreal(right, var)
-        impl1 = f'(=> (>= {right} 0) (= {left} {right}))'
-        impl2 = f'(=> (< {right} 0) (= {left} 0))'
-        return f'(and {impl1} {impl2})'
-      ################################################################
       left, right = sympy_to_dreal(left, var), sympy_to_dreal(right, var)
       return f'(= {left} {right})'
     # Functions
+    case sp.Ne():
+      left, right = [sympy_to_dreal(arg, var) for arg in expr.args]
+      return f'(not (= {left} {right}))'
     case sp.Abs():
       arg = sympy_to_dreal(expr.args[0], var)
-      return f'(ite (>= {arg} 0) {arg} (* -1 {arg}))'
+      return f'(abs {arg})'
     case sp.sin():
       assert len(expr.args) == 1
       arg = sympy_to_dreal(expr.args[0], var)
@@ -108,36 +132,40 @@ def sympy_to_dreal(expr, var):
     case sp.Function() if expr.name == 'ReLU':
       arg = sympy_to_dreal(expr.args[0], var)
       return f'(ite (>= {arg} 0) {arg} 0)'
+    case sp.Implies():
+      assert len(expr.args) == 2 
+      left, right = [sympy_to_dreal(arg, var) for arg in expr.args]
+      return f'(=> {left} {right})'
     case _:
       raise NotImplementedError(type(expr))
 
 
 A = nn.Sequential(
-  # nn.Linear(2, 4, bias=False),
-  # nn.ReLU(),
-  # nn.Linear(4, 2, bias=False),
-  nn.Linear(2, 2, bias=False)
+  nn.Linear(1, 2, bias=False),
+  nn.ReLU(),
+  nn.Linear(2, 1, bias=False),
+  # nn.Linear(2, 2, bias=False)
 )
 
 with torch.no_grad():
-  # W0 = torch.vstack((
-  #   torch.eye(2, 2),
-  #   torch.eye(2, 2) * -1,
-  # ))
+  W0 = torch.vstack((
+    torch.eye(1, 1),
+    torch.eye(1, 1) * -1,
+  ))
 
-  # W2 = torch.hstack((
-  #   torch.eye(2, 2) * -1.1,
-  #   torch.eye(2, 2) * +1.1,
-  # ))
+  W2 = torch.hstack((
+    torch.eye(1, 1) * RATIO,
+    torch.eye(1, 1) * -RATIO,
+  ))
 
-  # A[0].weight = nn.Parameter(W0)
-  # A[2].weight = nn.Parameter(W2)
-
-  W0 = torch.eye(2, 2) * -1.1
   A[0].weight = nn.Parameter(W0)
+  A[2].weight = nn.Parameter(W2)
 
-env = Unstable2D()
-F = F_Unstable2D
+  # W0 = torch.eye(2, 2) * -1.1
+  # A[0].weight = nn.Parameter(W0)
+
+env = Unstable1D()
+F = F_Unstable1D
 
 dim = env.dim
 x = ColumnVector('x_', dim)
@@ -159,7 +187,8 @@ problem.append(sp.Eq(err, norm_o))
 # problem += b_cs
 # assert b_o.shape == (1, 1)
 # b_o = b_o[0]
-problem.append(err > 0.001)
+problem.append(sp.Ne(err, 0))
+
 
 x_dreal = [dreal.Variable(f'x_{i}') for i in range(dim)]
 constraints = bounds + problem
@@ -169,19 +198,10 @@ var = {v: v.name for v in var}
 constraints = [sympy_to_dreal(c, var) for c in constraints]
 # print(constraints)
 
-query = """; (set-logic QF_NRA)
-(set-option :precision 0.001)
-
-"""
+query = ''
 
 for v in sorted(var.values()):
   query += f'(declare-fun {v} () Real)\n'
-
-# query += """(declare-fun d_0 () Real)
-# (declare-fun d_1 () Real)
-# (declare-fun n_0 () Real)
-# (declare-fun n_1 () Real)
-# """
 
 query += '\n\n'
 
@@ -200,9 +220,9 @@ with open('dreal-query.smt2', 'w') as f:
 DREAL_VERSION = '4.21.06.2'
 DREAL_BIN = f'/opt/dreal/{DREAL_VERSION}/bin/dreal'
 result = subprocess.run(
-  [DREAL_BIN, 'dreal-query.smt2'],
+  [DREAL_BIN, '--model', 'dreal-query.smt2'],
   capture_output=True,
   timeout=60,
 )
 
-print(result)
+print(result.stdout.decode('utf-8'))
