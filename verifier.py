@@ -90,7 +90,7 @@ def Net(net: nn.Sequential, x: sp.Matrix, netname='y'):
     match layer:
       case nn.Linear():
         output = ColumnVector(
-          f'{netname}_{i},', layer.out_features)
+          f'{netname}_{i}_', layer.out_features)
         W, b = Wb(net[i])
         result = W @ x + b
         for j in range(layer.out_features):
@@ -98,7 +98,7 @@ def Net(net: nn.Sequential, x: sp.Matrix, netname='y'):
         # Setting output of current layer as input for the next.
         x = output
       case nn.ReLU():
-        output = ColumnVector(f'{netname}_{i},', len(x))
+        output = ColumnVector(f'{netname}_{i}_', len(x))
         for j in range(len(x)):
           constraints.append(sp.Eq(output[j], ReLU(x[j])))
         x = output
