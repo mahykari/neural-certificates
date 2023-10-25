@@ -38,8 +38,19 @@ class Verifier(ABC):
     ...
 
 
-# Representation of ReLU in SymPy
-ReLU = sp.Function('ReLU')
+def ReLU(x: sp.Symbol, y=None) -> (sp.Symbol, List[sp.Expr]):
+  """Representation of a ReLU constraint in SymPy. 
+  
+  The constraint is of the form y = ReLU(x), where y and x are SymPy 
+  symbols.
+  """
+  if y is None:
+    y = sp.Symbol(f'relu_{x.name}')
+  constraints = [
+    sp.Implies(x >= 0, sp.Eq(y, x)),
+    sp.Implies(x < 0, sp.Eq(y, 0))
+  ]
+  return y, constraints
 
 
 def ColumnVector(pattern: str, dim: int):
@@ -100,7 +111,8 @@ def Net(net: nn.Sequential, x: sp.Matrix, netname='y'):
       case nn.ReLU():
         output = ColumnVector(f'{netname}_{i}_', len(x))
         for j in range(len(x)):
-          constraints.append(sp.Eq(output[j], ReLU(x[j])))
+          _, relu_cs = ReLU(x[j], output[j])
+          constraints += relu_cs
         x = output
   assert output is not None
   return output, constraints
