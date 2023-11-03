@@ -1,5 +1,6 @@
 #!/bin/bash
-#SBATCH --job-name=test-cuda     # create a short name for your job
+#SBATCH --job-name=test-learner  # create a short name for your job
+#SBATCH --output=test-learner    # output file
 #SBATCH --nodes=1                # node count
 #SBATCH --ntasks=1               # total number of tasks across all nodes
 #SBATCH --cpus-per-task=4        # cpu-cores per task (>1 if multi-threaded tasks)
@@ -15,12 +16,12 @@ module purge
 module load cuda/11.7
 module load python/3.10
 
-# python -m venv .venv
-# source .venv/bin/activate
+# Some packages (e.g., PyTorch), are already installed and configured to use
+# GPU. Yet, some other packages should be installed in an environment.
+# TODO. Set the environment properly; some packages should be inherited.
 
-# pip install torch numpy
-
-python test-cuda.py
+# TODO. Change this command, so it actually does something.
+python -m ...
 
 # deactivate
 # rm -rf .venv/
