@@ -71,20 +71,17 @@ class Learner(ABC):
     ...
 
   @abstractmethod
-  def fit(self, S):
+  def fit(self, *args):
     ...
 
   @property
   def device(self):
-    # if torch.cuda.is_available():
-    #   return 'cuda'
+    if torch.cuda.is_available():
+      return 'cuda'
     return 'cpu'
 
 
-class Learner_Reach_V:
-  EPS_TGT, EPS_DEC = 3e-1, 1e0
-  LR, WEIGHT_DECAY = 3e-3, 1e-5
-
+class Learner_Reach_V(Learner):
   def __init__(self, env, models):
     # Assumption. Cert is a fully-connected NN with ReLU activation
     # after each hidden layer, as well as the output layer. We can
@@ -103,32 +100,40 @@ class Learner_Reach_V:
     Args:
       S: a set of sampled points from the state space.
     """
-    # N_EPOCH, N_BATCH = 2048, 50
-    N_EPOCH, N_BATCH = 512, 50  # For debugging purposes
-    LR, WEIGHT_DECAY = 3e-3, 1e-5
+    n_epoch = 16
+    batch_size = 1000
+    learning_rate = 1e-3
 
-    state_ld = D.DataLoader(
-      S, batch_size=len(S) // N_BATCH, shuffle=True)
+    self.V.to(self.device)
+    S = S.to(self.device)
 
-    optimizer = optim.Adam(
+    optimizer = optim.SGD(
       self.V.parameters(),
-      lr=LR, weight_decay=WEIGHT_DECAY
-    )
+      lr=learning_rate)
 
-    for e in range(N_EPOCH + 1):
-      epoch_loss = 0
-      state_it = iter(state_ld)
-      for _ in range(N_BATCH):
-        states = next(state_it)
+    dataloader = D.DataLoader(S, batch_size=batch_size, shuffle=True)
+    for e in range(n_epoch + 1):
+      for batch in dataloader:
         optimizer.zero_grad()
-        loss = self.loss_fn(states)
-        epoch_loss += loss.item()
+        loss = self.loss_fn(batch)
         loss.backward()
+        nn.utils.clip_grad_norm_(self.V.parameters(), 1e3)
         optimizer.step()
-      if e % (N_EPOCH >> 2) == 0:
-        logger.debug(
-          f'Epoch {e:>5}. '
-          + f'Loss={epoch_loss / N_BATCH:>16.6f}')
+      if e % (n_epoch >> 3) != 0:
+        continue
+      logger.debug(
+        f'Epoch {e:>5}. '
+        + f'Loss={self.loss_fn(S).item():>12.6f}, '
+        + f'Chk={self.chk(S).item():>8.6f}, '
+        + f'|S|={len(S):>8}, '
+        + f'L.R.={learning_rate:.6f}'
+      )
+
+    torch.cuda.empty_cache()
+    self.V.to('cpu')
+    S = S.to('cpu')
+
+    return S
 
   def loss_fn(self, S):
     """Aggregate loss function for the certificate NN. 
@@ -136,9 +141,9 @@ class Learner_Reach_V:
     New components can be added to the loss by defining new 
     functions and calling them in the expression evaluated below.
     """
-    return 100*self._loss_dec(S)
+    return 1e5 * self.loss_dec(S)
 
-  def _loss_dec(self, S):
+  def loss_dec(self, S, eps=1):
     """Loss component for the Decrease condition.
 
     For any point x in S, this functions increases the loss if
@@ -148,24 +153,14 @@ class Learner_Reach_V:
     Args:
       S: a batch of points sampled from outside the target space.
     """
-
-    # We assume self.env.f only works on a single point in the state 
-    # space. Using torch.vmap allows us to evaluate self.env.f on a 
-    # set (i.e., a torch.Tensor) of points. 
-    f_ = torch.vmap(self.env.f)
-    S_nxt = f_(S)
-
+    S_nxt = self.env.f(S)
     return torch.mean(
-      torch.relu(self.V(S_nxt) - self.V(S) + 1))
+        torch.relu(self.V(S_nxt) - self.V(S) + eps)
+    )
 
-  # def chk_tgt(self, C_tgt, eps_tgt=EPS_TGT):
-  #   """Check for Target condition on training data."""
-  #   v = self.cert(C_tgt)
-  #   return torch.all(v <= eps_tgt)
-
-  def chk(self, S):
-    return True
-
+  def chk(self, S, eps=0.01):
+    S_nxt = self.env.f(S)
+    return torch.max(torch.relu(self.V(S_nxt) - self.V(S) + eps))
 
 def sample_ball(dim: int, n_samples: int = 100):
   """Sampled points from the surface of a unit ball.
