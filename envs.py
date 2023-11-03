@@ -1,6 +1,6 @@
-from abc import ABC, abstractmethod
+from abc import ABC, abstractproperty
+from typing import Callable
 
-import numpy as np
 import sympy as sp
 import torch
 
@@ -25,34 +25,36 @@ class Box:
 
 class Env(ABC):
   """Generic base class for all defined environments.
-  
+
   *IMPORTANT*: All defined environments should inherit from this 
   class.
   """
 
-  @property
-  @abstractmethod
+  @abstractproperty
   def dim(self):
     """Number of dimensions of the environment."""
     ...
 
-  @property
-  @abstractmethod
-  def bnd(self) -> Box:
+  @abstractproperty
+  def bnd(self) -> (torch.Tensor, torch.Tensor):
     """Bounds of the environment."""
     ...
 
-  @property
-  @abstractmethod
-  def tgt(self) -> Box:
+  @abstractproperty
+  def tgt(self) -> (torch.Tensor, torch.Tensor):
     """Target space of the environment."""
     ...
 
-  @property
-  @abstractmethod
+  @abstractproperty
   def f(self, *args):
     """State transition function."""
     ...
+
+  @property
+  def device(self):
+    if torch.cuda.is_available():
+      return 'cuda'
+    return 'cpu'
 
 
 class Spiral(Env):
@@ -67,30 +69,31 @@ class Spiral(Env):
     high=torch.Tensor([ 1.0,  1.0]),
   )
 
+  init = bnd
+
   tgt = Box(
     low =torch.Tensor([-0.05, -0.05]),
     high=torch.Tensor([ 0.05,  0.05]),
   )
 
-  def __init__(self, alpha: float=ALPHA, beta: float=BETA):
+  def __init__(self, alpha: float = ALPHA, beta: float = BETA):
     self.alpha = alpha
     self.beta = beta
 
   def nxt(self, x: torch.Tensor):
     """The transition function f: X -> X."""
     a, b = self.alpha, self.beta
-    A = torch.Tensor([
-      [ a,  b],
-      [-b,  a]
-    ])
 
-    return A @ x
+    x_nxt = torch.zeros_like(x)
+    x_nxt[:, 0] = a*x[:, 0] + b*x[:, 1]
+    x_nxt[:, 1] = -b*x[:, 0] + a*x[:, 1] 
+    # return x @ A.T
+    return x_nxt
 
   # Alias for nxt, for simpler notation
   f = nxt
 
-  @staticmethod
-  def sample():
+  def sample(self):
     """Returns a tuple of samples from different regions of the state
     space.
 
@@ -98,7 +101,18 @@ class Spiral(Env):
       (X_dec, ): X_dec are points sampled from the decrease
       (everywhere outside target) space.
     """
-    S = torch.randn(16000, 2)
+    N = 5
+    X = [None for i in range(N)]
+    x_init = torch.Tensor(2000, self.dim).uniform_(0., 1.)
+    x_min, x_max = self.init.low, self.init.high
+    for i in range(self.dim):
+      x_init[:, i] = x_init[:, i] * (x_max[i] - x_min[i]) + x_min[i] 
+    
+    X[0] = x_init
+    for i in range(1, N):
+      X[i] = self.f(X[i - 1])
+
+    S = torch.cat(X)
     return S
 
 
@@ -118,16 +132,23 @@ def F_Spiral(x, alpha=Spiral.ALPHA, beta=Spiral.BETA):
 
 class SuspendedPendulum(Env):
   """A simple 2-dimensional pendulum, suspended freely."""
-  # g_ = gravitational acceleration, l_ = rod length, m_ = bob mass,
-  # b_ = damping coefficient
-  g_, l_, m_, b_ = 9.8, 1, 1, 0.2
-  tau_ = 0.01 # Sampling times
+  # G = gravitational acceleration, 
+  # L = rod length, 
+  # M = bob mass,
+  # B = damping coefficient
+  G, L, M, B = 9.8, 1, 1, 0.2
+  TAU = 0.01 # Sampling time delta
   dim = 2
 
   bnd = Box(
     # The bounds on the angular velocity are too pessimistic for now
     low=torch.Tensor([-3.14, -8]),
     high=torch.Tensor([3.14, 8]),
+  )
+
+  init = Box(
+    low=torch.Tensor([-1.57, -1]),
+    high=torch.Tensor([1.57, 1]),
   )
 
   tgt = Box(
@@ -137,10 +158,10 @@ class SuspendedPendulum(Env):
 
   def __init__(
       self,
-      g: float = g_,
-      l: float = l_,
-      m: float = m_,
-      b: float = b_):
+      g: float = G,
+      l: float = L,
+      m: float = M,
+      b: float = B):
     self.g = g
     self.l = l
     self.m = m
@@ -149,30 +170,31 @@ class SuspendedPendulum(Env):
   def nxt(self, x: torch.Tensor):
     """The transition function f: X -> X."""
     g, l, m, b = self.g, self.l, self.m, self.b
-    tau = self.tau_
+    tau = self.TAU
 
-    xx_a = x[0] + x[1]*tau
-    xx_b = x[1] + (-(b/m)*x[1] - (g/l)*torch.sin(x[0]))*tau
-    return torch.hstack([xx_a, xx_b])
+    x_nxt = torch.zeros_like(x)
+    x_nxt[:, 0] = x[:, 0] + x[:, 1]*tau
+    x_nxt[:, 1] = x[:, 1] + (
+      -(b/m)*x[:, 1] - (g/l)*torch.sin(x[:, 0])
+    )*tau
+    return x_nxt
 
   # Alias for nxt, for simpler notation
   f = nxt
 
-  @staticmethod
-  def sample():
-    """Returns a tuple of samples from different regions of the state
-    space.
+  def sample(self):
+    N = 100
+    X = [None for i in range(N)]
+    x_init = torch.Tensor(100, self.dim).uniform_(0., 1.)
+    x_min, x_max = self.init.low, self.init.high
+    for i in range(self.dim):
+      x_init[:, i] = x_init[:, i] * (x_max[i] - x_min[i]) + x_min[i] 
+    
+    X[0] = x_init
+    for i in range(1, N):
+      X[i] = self.f(X[i - 1])
 
-    Returns:
-      S: points sampled within the boundaries of the system, drawn 
-      from a normal distribution.
-    """
-    # Samples in S are drawn from Normal(0, 1). They are then scaled
-    # so that all angles are in range [-pi, pi] and all angular
-    # velocities are in range [-4, 4].
-    S = torch.randn(16000, 2)
-    S *= torch.Tensor([3.14/3, 4/3])
-
+    S = torch.cat(X)
     return S
 
 
@@ -204,9 +226,8 @@ class Unstable2D(Env):
 
   f = nxt
 
-  @staticmethod
-  def sample():
-    S = torch.randn(160000, 2)
+  def sample(self):
+    S = torch.randn(10000, 2)
     return S
 
 
