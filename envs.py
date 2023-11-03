@@ -104,7 +104,7 @@ class Spiral(Env):
     N = 5
     X = [None for i in range(N)]
     x_init = torch.Tensor(2000, self.dim).uniform_(0., 1.)
-    x_min, x_max = self.init
+    x_min, x_max = self.init.low, self.init.high
     for i in range(self.dim):
       x_init[:, i] = x_init[:, i] * (x_max[i] - x_min[i]) + x_min[i] 
     
@@ -186,7 +186,7 @@ class SuspendedPendulum(Env):
     N = 100
     X = [None for i in range(N)]
     x_init = torch.Tensor(100, self.dim).uniform_(0., 1.)
-    x_min, x_max = self.init
+    x_min, x_max = self.init.low, self.init.high
     for i in range(self.dim):
       x_init[:, i] = x_init[:, i] * (x_max[i] - x_min[i]) + x_min[i] 
     
