@@ -28,6 +28,20 @@ def nn_V_2d():
 
   return net
 
+def nn_P_2d():
+  """Utility function to generate a default 3-color parity certificate for a
+  2D space. Zeroing bias terms and using ReLU activation on the last
+  layer enforces Nonnegativity and Target conditions.
+  """
+  net = nn.Sequential(
+    nn.Linear(2, 16, bias=False),
+    nn.ReLU(),
+    nn.Linear(16, 3, bias=False),
+    nn.ReLU()
+  )
+
+  return net
+
 
 def nn_A_2d():
   """Utility function to generate a default abstraction NN for a
@@ -291,11 +305,32 @@ class Learner_3Parity_P(Learner):
     self.env = env
     self.P = models[0]
 
-  def fit(self, S):
+  def add_labels(self, S, C):
+    """Augments states with labels as an additional dimension
+
+    Args:
+      S: set of sampled points from the state space.
+      C: the priorities of the states in S; state S[i] has priority C[i] for
+            every i.
+    """
+    return torch.column_stack((S, C))
+
+  def rem_labels(self, S_labeled):
+    """Separate labeled states into states and their labels
+
+    Args:
+      S_labeled: set of labeled states.
+    """
+    dim = S_labeled.size(1)
+    return S_labeled[:, 0:dim], S_labeled[:, dim]
+
+  def fit(self, S, C):
     """Fits P based on a predefined loss function.
 
     Args:
-      S = [ [S0], [S1], [S2] ]: sets of sampled points from the state space with priorities 0, 1, 2, respectively.
+      S: sets of sampled points from the state space.
+      C: the priorities of the states in S; state S[i] has priority C[i] for
+            every i.
     """
     n_epoch = 16
     batch_size = 1000
@@ -309,120 +344,111 @@ class Learner_3Parity_P(Learner):
       self.P.parameters(),
       lr=learning_rate)
 
-    for i in range(3):
-        dataloader = D.DataLoader(S[i], batch_size=batch_size, shuffle=True)
-        for e in range(n_epoch + 1):
-          for batch in dataloader:
-            optimizer.zero_grad()
-            loss = self.loss_fn(batch)
-            loss.backward()
-            nn.utils.clip_grad_norm_(self.P.parameters(), 1e3)
-            optimizer.step()
-          if e % (n_epoch >> 3) != 0:
-            continue
-          logger.debug(
-            f'Epoch {e:>5}. '
-            + f'Loss={self.loss_fn(S[i]).item():>12.6f}, '
-            + f'Chk={self.chk(S[i]).item():>8.6f}, '
-            + f'|S{i}|={len(S[i]):>8}, '
-            + f'L.R.={learning_rate:.6f}'
-          )
+    S_labeled = add_labels(S, C)
 
-        torch.cuda.empty_cache()
-        self.P.to('cpu')
-        S[i] = S[i].to('cpu')
+    dataloader = D.DataLoader(S_labeled, batch_size=batch_size, shuffle=True)
+    for e in range(n_epoch + 1):
+      for batch in dataloader:
+        optimizer.zero_grad()
+        loss = self.loss_fn(batch)
+        loss.backward()
+        nn.utils.clip_grad_norm_(self.P.parameters(), 1e3)
+        optimizer.step()
+      if e % (n_epoch >> 3) != 0:
+        continue
+      logger.debug(
+        f'Epoch {e:>5}. '
+        + f'Loss={self.loss_fn(S_labeled).item():>12.6f}, '
+        + f'Chk={self.chk(S_labeled).item():>8.6f}, '
+        + f'|S|={len(S_labeled):>8}, '
+        + f'L.R.={learning_rate:.6f}'
+      )
+
+    torch.cuda.empty_cache()
+    self.P.to('cpu')
+    S_labeled = S_labeled.to('cpu')
 
 
-    return S
+    return S_labeled
 
-  def loss_fn(self, S):
+  def loss_fn(self, S_labeled):
     """Aggregate loss function for the certificate NN.
 
     New components can be added to the loss by defining new
     functions and calling them in the expression evaluated below.
     """
-    return 1e5 * self.loss_dec(S)
+    return 1e5 * self.loss_dec(S_labeled)
 
-  def loss_dec(self, S, eps=1):
+  def loss_dec(self, S_labeled, eps=1):
+    L0, L1, L2 = losses(S_labeled, eps)
+
+    return (torch.sum(L0) + torch.sum(L1) + torch.sum(L2))/3
+
+  def chk(self, S_labeled, eps=0.01):
+    L0, L1, L2 = losses(S_labeled, eps)
+    l0 = torch.max(L0)
+    l1 = torch.max(L1)
+    l2 = torch.max(L2)
+
+    return torch.maximum(l0, torch.maximum(l1, l2))
+
+  def losses(self, S_labeled, eps):
     """Loss component for the lexicographic decrease condition.
 
     For any point x, this functions increases the loss if
-    x in S[0]: P(f(x))[0] - P(x)[0] > 0
-    x in S[1]: P(f(x))[0] - P(x)[0] > 0 ||
-               P(f(x))[0] - P(x)[0] + eps > 0 && P(f(x))[1] - P(x)[1] + eps > 0
-    x in S[2]: P(f(x))[0] - P(x)[0] > 0 ||
+    x has priority 0: P(f(x))[0] - P(x)[0] > 0
+    x has priority 1: P(f(x))[0] - P(x)[0] > 0 ||
+                P(f(x))[0] - P(x)[0] + eps > 0 && P(f(x))[1] - P(x)[1] + eps > 0
+    x has priority 2: P(f(x))[0] - P(x)[0] > 0 ||
                P(f(x))[0] - P(x)[0] + eps > 0 && P(f(x))[1] - P(x)[1] > 0 ||
-               P(f(x))[0] - P(x)[0] + eps > 0 && P(f(x))[1] - P(x)[1] + eps > 0 && P(f(x))[2] - P(x)[2] > 0
+               P(f(x))[0] - P(x)[0] + eps > 0 && P(f(x))[1] - P(x)[1] + eps > 0
+                        && P(f(x))[2] - P(x)[2] > 0
 
     This enforces the lexicographic decrease conditions:
-    x in S[0]: P(x) =>_0 P(f(x))
-    x in S[1]: P(x) >_1  P(f(x))
-    x in S[2]: P(x) =>_2 P(f(x))
+    x has priority 0: P(x) =>_0 P(f(x))
+    x has priority 1: P(x) >_1  P(f(x))
+    x has priority 2: P(x) =>_2 P(f(x))
 
     Args:
       S: a batch of points sampled from outside the target space.
     """
-    for i in range(3):
-        S_nxt[i] = self.env.f(S[i])
+    S, C = rem_labels(S_labeled)
+    S_nxt = self.env.f(S)
+    # Xi for every x: positive if P(f(x))[i] - P(x)[i] > 0
+    # Yi for every x: positive if P(f(x))[i] - P(x)[i] + eps > 0
+    X0 = torch.relu(self.P(S_nxt)[0] - self.P(S)[0])
+    X1 = torch.relu(self.P(S_nxt)[1] - self.P(S)[1])
+    X2 = torch.relu(self.P(S_nxt)[2] - self.P(S)[2])
 
-    # Xij for every x in S[i]: positive if P(f(x))[j] - P(x)[j] > 0
-    # Yij for every x in S[i]: positive if P(f(x))[j] - P(x)[j] + eps > 0
-    X00 = torch.relu(self.P(S_nxt[0])[0] - self.P(S[0])[0])
+    Y0 = torch.relu(self.P(S_nxt)[0] - self.P(S)[0] + eps)
+    Y1 = torch.relu(self.P(S_nxt)[1] - self.P(S)[1] + eps)
+    Y2 = torch.relu(self.P(S_nxt)[2] - self.P(S)[2] + eps)
 
-    X10 = torch.relu(self.P(S_nxt[1])[0] - self.P(S[1])[0])
-    Y10 = torch.relu(self.P(S_nxt[1])[0] - self.P(S[1])[0] + eps)
-    Y11 = torch.relu(self.P(S_nxt[1])[1] - self.P(S[1])[1] + eps)
+    def L0(self):
+      nonlocal X0, C
+      return X0 * torch.where(C==0, 1.0, 0.0)
 
-    X20 = torch.relu(self.P(S_nxt[2])[0] - self.P(S[2])[0])
-    X21 = torch.relu(self.P(S_nxt[2])[1] - self.P(S[2])[1])
-    X22 = torch.relu(self.P(S_nxt[2])[2] - self.P(S[2])[2])
-    Y20 = torch.relu(self.P(S_nxt[2])[0] - self.P(S[2])[0] + eps)
-    Y21 = torch.relu(self.P(S_nxt[2])[1] - self.P(S[2])[1] + eps)
+    def L2(self):
+      nonlocal X0, Y0, Y1, C
+      Z = torch.where(C==1, 1.0, 0.0)
+      X0 = X0 * Z
+      Y0 = Y0 * Z
+      Y1 = Y1 * Z
+      return torch.maximum( X0, torch.minimum( Y0, Y1 ))
 
-    L0 = torch.mean(X00)
-    L1 = torch.mean(
-            torch.maximum( X10, torch.minimum( Y10, Y11 ))
-        )
-    L2 = torch.mean(
-            torch.maximum( X10,
-                torch.maximum(
-                    torch.minimum( Y20, X21 ),
-                    torch.minimum( Y20, torch.minimum( Y21, X22 ))
-                )
-            )
-        )
+    def L2(self):
+      nonlocal X0, X1, X2, Y0, Y1, C
+      Z = torch.where(C==2, 1.0, 0.0)
+      X0 = X0 * Z
+      X1 = X1 * Z
+      X2 = X2 * Z
+      Y0 = Y0 * Z
+      Y1 = Y1 * Z
+      return torch.maximum( X0,
+              torch.maximum(
+                  torch.minimum( Y0, X1 ),
+                  torch.minimum( Y0, torch.minimum( Y1, X2 ))
+              )
+          )
 
-    return (L0 + L1 + L2)/3
-
-  def chk(self, S, eps=0.01):
-    for i in range(3):
-        S_nxt[i] = self.env.f(S[i])
-
-    # Xij for every x in S[i]: positive if P(f(x))[j] - P(x)[j] > 0
-    # Yij for every x in S[i]: positive if P(f(x))[j] - P(x)[j] + eps > 0
-    X00 = torch.relu(self.P(S_nxt[0])[0] - self.P(S[0])[0])
-
-    X10 = torch.relu(self.P(S_nxt[1])[0] - self.P(S[1])[0])
-    Y10 = torch.relu(self.P(S_nxt[1])[0] - self.P(S[1])[0] + eps)
-    Y11 = torch.relu(self.P(S_nxt[1])[1] - self.P(S[1])[1] + eps)
-
-    X20 = torch.relu(self.P(S_nxt[2])[0] - self.P(S[2])[0])
-    X21 = torch.relu(self.P(S_nxt[2])[1] - self.P(S[2])[1])
-    X22 = torch.relu(self.P(S_nxt[2])[2] - self.P(S[2])[2])
-    Y20 = torch.relu(self.P(S_nxt[2])[0] - self.P(S[2])[0] + eps)
-    Y21 = torch.relu(self.P(S_nxt[2])[1] - self.P(S[2])[1] + eps)
-
-    L0 = torch.max(X00)
-    L1 = torch.max(
-            torch.maximum( X10, torch.minimum( Y10, Y11 ))
-        )
-    L2 = torch.max(
-            torch.maximum( X10,
-                torch.maximum(
-                    torch.minimum( Y20, X21 ),
-                    torch.minimum( Y20, torch.minimum( Y21, X22 ))
-                )
-            )
-        )
-
-    return torch.maximum( L0, torch.maximum( L1, L2) )
+    return L0(), L1(), L2()
