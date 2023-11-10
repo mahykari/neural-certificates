@@ -305,12 +305,13 @@ class Learner_3Parity_P(Learner):
     self.env = env
     self.P = models[0]
 
+
   def add_labels(self, S, C):
     """Augments states with labels as an additional dimension
 
     Args:
       S: set of sampled points from the state space.
-      C: the priorities of the states in S; state S[i] has priority C[i] for
+      C: the colors of the states in S; state S[i] has priority C[i] for
             every i.
     """
     return torch.column_stack((S, C))
@@ -329,7 +330,7 @@ class Learner_3Parity_P(Learner):
 
     Args:
       S: sets of sampled points from the state space.
-      C: the priorities of the states in S; state S[i] has priority C[i] for
+      C: the colors of the states in S; state S[i] has priority C[i] for
             every i.
     """
     n_epoch = 16
@@ -380,12 +381,12 @@ class Learner_3Parity_P(Learner):
     return 1e5 * self.loss_dec(S_labeled)
 
   def loss_dec(self, S_labeled, eps=1):
-    L0, L1, L2 = losses(S_labeled, eps)
+    L0, L1, L2 = self.losses(S_labeled, eps)
 
     return (torch.sum(L0) + torch.sum(L1) + torch.sum(L2))/3
 
   def chk(self, S_labeled, eps=0.01):
-    L0, L1, L2 = losses(S_labeled, eps)
+    L0, L1, L2 = self.losses(S_labeled, eps)
     l0 = torch.max(L0)
     l1 = torch.max(L1)
     l2 = torch.max(L2)
@@ -412,42 +413,39 @@ class Learner_3Parity_P(Learner):
     Args:
       S: a batch of points sampled from outside the target space.
     """
-    S, C = rem_labels(S_labeled)
+    S, C = self.rem_labels(S_labeled)
     S_nxt = self.env.f(S)
     # Xi for every x: positive if P(f(x))[i] - P(x)[i] > 0
     # Yi for every x: positive if P(f(x))[i] - P(x)[i] + eps > 0
-    X0 = torch.relu(self.P(S_nxt)[0] - self.P(S)[0])
-    X1 = torch.relu(self.P(S_nxt)[1] - self.P(S)[1])
-    X2 = torch.relu(self.P(S_nxt)[2] - self.P(S)[2])
+    cex_ge_0 = torch.relu(self.P(S_nxt)[0] - self.P(S)[0])
+    cex_ge_1 = torch.relu(self.P(S_nxt)[1] - self.P(S)[1])
+    cex_ge_2 = torch.relu(self.P(S_nxt)[2] - self.P(S)[2])
 
-    Y0 = torch.relu(self.P(S_nxt)[0] - self.P(S)[0] + eps)
-    Y1 = torch.relu(self.P(S_nxt)[1] - self.P(S)[1] + eps)
-    Y2 = torch.relu(self.P(S_nxt)[2] - self.P(S)[2] + eps)
+    cex_g_0 = torch.relu(self.P(S_nxt)[0] - self.P(S)[0] + eps)
+    cex_g_1 = torch.relu(self.P(S_nxt)[1] - self.P(S)[1] + eps)
+    cex_g_2 = torch.relu(self.P(S_nxt)[2] - self.P(S)[2] + eps)
 
-    def L0(self):
-      nonlocal X0, C
-      return X0 * torch.where(C==0, 1.0, 0.0)
+    def L0():
+      return cex_ge_0 * torch.where(C==0, 1.0, 0.0)
 
-    def L2(self):
-      nonlocal X0, Y0, Y1, C
+    def L1():
       Z = torch.where(C==1, 1.0, 0.0)
-      X0 = X0 * Z
-      Y0 = Y0 * Z
-      Y1 = Y1 * Z
-      return torch.maximum( X0, torch.minimum( Y0, Y1 ))
+      X0_ = cex_ge_0 * Z
+      Y0_ = cex_g_0 * Z
+      Y1_ = cex_g_1 * Z
+      return torch.maximum( X0_, torch.minimum( Y0_, Y1_ ))
 
-    def L2(self):
-      nonlocal X0, X1, X2, Y0, Y1, C
+    def L2():
       Z = torch.where(C==2, 1.0, 0.0)
-      X0 = X0 * Z
-      X1 = X1 * Z
-      X2 = X2 * Z
-      Y0 = Y0 * Z
-      Y1 = Y1 * Z
-      return torch.maximum( X0,
+      X0_ = cex_ge_0 * Z
+      X1_ = cex_ge_1 * Z
+      X2_ = cex_ge_2 * Z
+      Y0_ = cex_g_0 * Z
+      Y1_ = cex_g_1 * Z
+      return torch.maximum( X0_,
               torch.maximum(
-                  torch.minimum( Y0, X1 ),
-                  torch.minimum( Y0, torch.minimum( Y1, X2 ))
+                  torch.minimum( Y0_, X1_ ),
+                  torch.minimum( Y0_, torch.minimum( Y1_, X2_ ))
               )
           )
 

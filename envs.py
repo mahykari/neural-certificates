@@ -116,6 +116,65 @@ class Spiral(Env):
     return S
 
 
+class Spiral_3P(Env):
+  ALPHA, BETA = 0.5, 0.5
+  """A simple 2-dimensional dynamical system with a spiral 
+  trajectory."""
+
+  dim = 2
+
+  bnd = Box(
+    low=torch.Tensor([-1.0, -1.0]),
+    high=torch.Tensor([1.0, 1.0]),
+  )
+
+  init = bnd
+
+  tgt = Box(
+    low=torch.Tensor([-0.05, -0.05]),
+    high=torch.Tensor([0.05, 0.05]),
+  )
+
+  def __init__(self, alpha: float = ALPHA, beta: float = BETA):
+    self.alpha = alpha
+    self.beta = beta
+
+  def nxt(self, x: torch.Tensor):
+    """The transition function f: X -> X."""
+    a, b = self.alpha, self.beta
+
+    x_nxt = torch.zeros_like(x)
+    x_nxt[:, 0] = a * x[:, 0] + b * x[:, 1]
+    x_nxt[:, 1] = -b * x[:, 0] + a * x[:, 1]
+    # return x @ A.T
+    return x_nxt
+
+  # Alias for nxt, for simpler notation
+  f = nxt
+
+  def sample(self):
+    """Returns a tuple of samples from different regions of the state
+    space.
+
+    Returns:
+      (X_dec, ): X_dec are points sampled from the decrease
+      (everywhere outside target) space.
+    """
+    N = 5
+    X = [None for i in range(N)]
+    x_init = torch.Tensor(2000, self.dim).uniform_(0., 1.)
+    x_min, x_max = self.init.low, self.init.high
+    for i in range(self.dim):
+      x_init[:, i] = x_init[:, i] * (x_max[i] - x_min[i]) + x_min[i]
+
+    X[0] = x_init
+    for i in range(1, N):
+      X[i] = self.f(X[i - 1])
+
+    S = torch.cat(X)
+    return S
+
+
 def F_Spiral(x, alpha=Spiral.ALPHA, beta=Spiral.BETA):
   fx = sp.symbols('fx_0 fx_1')
   fx = sp.Matrix(fx)
