@@ -11,3 +11,6 @@ __pycache__
 .idea
 .vscode
 
+# Link files to external repositories
+maraboupy
+neural_clbf
