@@ -206,7 +206,7 @@ S = torch.cat((X, U), dim=1)
 print('Phase 1. Learning abstraction (A) ... ')
 
 learner1 = Learner_A(env, [nn_A(n_dims=2, n_controls=1)])
-learner1.fit(S, n_epoch=1024, lr=7e-4, gamma=0.9)
+learner1.fit(S, n_epoch=64, lr=7e-4, gamma=0.9)
 
 delta = learner1.chk(S)
 
@@ -216,7 +216,7 @@ learner2 = Learner_PV(
     env.n_dims, delta,
     [learner1.A, nn_P(n_dims=2, n_controls=1), nn_V(n_dims=2)])
 
-learner2.fit(X, n_epoch=256, lr=3e-1, gamma=0.95)
+learner2.fit(X, n_epoch=64, lr=7e-1, gamma=0.95)
 
 
 X1 = env.sample_state_space(50 * n_samples)
