@@ -1,3 +1,6 @@
+import sys
+import time
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -6,6 +9,12 @@ import torch.optim as optim
 # from matplotlib import pyplot as plt
 
 from neural_clbf.systems import InvertedPendulum
+
+
+assert len(sys.argv) == 5
+bs1, lr1, bs2, lr2 = sys.argv[1:]
+bs1, bs2 = int(bs1), int(bs2)
+lr1, lr2 = float(lr1), float(lr2)
 
 
 def nn_A(n_dims, n_controls):
@@ -65,7 +74,7 @@ class Learner:
       loader = D.DataLoader(S, batch_size=batch_size, shuffle=True)
       for e in range(n_epoch + 1):
         for b_idx, s in enumerate(loader):
-          loss, chk = training_step(s, optimizer)
+          _, _ = training_step(s, optimizer)
           step = e * n_batch + b_idx
           if step % (n_step >> 4) != 0:
             continue
@@ -76,8 +85,6 @@ class Learner:
               # + f'|S|={len(S):>8}, '
               + f'LR={scheduler.get_last_lr()[0]:10.8f}, ',
           )
-          if self.chk(S) < 0.0:
-            return
         scheduler.step()
 
     training_loop()
@@ -190,6 +197,8 @@ class Learner_PV(Learner):
     return torch.max(self.V(S_nxt) - self.V(S))
 
 
+t_start = time.time()
+
 simulation_dt = 0.01
 nominal_params = {"m": 1.0, "L": 1.0, "b": 0.01}
 env = InvertedPendulum(
@@ -206,7 +215,7 @@ S = torch.cat((X, U), dim=1)
 print('Phase 1. Learning abstraction (A) ... ')
 
 learner1 = Learner_A(env, [nn_A(n_dims=2, n_controls=1)])
-learner1.fit(S, n_epoch=64, lr=7e-4, gamma=0.9)
+learner1.fit(S, n_epoch=1024, batch_size=bs1, lr=lr1)
 
 delta = learner1.chk(S)
 
@@ -216,14 +225,16 @@ learner2 = Learner_PV(
     env.n_dims, delta,
     [learner1.A, nn_P(n_dims=2, n_controls=1), nn_V(n_dims=2)])
 
-learner2.fit(X, n_epoch=64, lr=7e-1, gamma=0.95)
+learner2.fit(X, n_epoch=64, batch_size=bs2, lr=lr2)
 
 
 X1 = env.sample_state_space(50 * n_samples)
-X_nxt = env.zero_order_hold(X1, learner2.P(X1), env.dt).detach()
+U1 = learner2.P(X1).detach()
+S1 = torch.cat((X1, U1), dim=1)
+X_nxt = learner1.A(S1).detach() + delta * sample_ball(env.n_dims, len(X1))
 diff = (learner2.V(X_nxt) - learner2.V(X1)).detach()
 print(
-    'V( X ) - V( f(X, P(X)) ): '
+    'V( X ) - V( A( [X, P(X)] ) ): '
     + f'min={torch.min(diff):10.6f}, '
     + f'max={torch.max(diff):10.6f}, '
 )
@@ -232,3 +243,7 @@ print(
     + f'min={torch.min(learner2.P(X1)):12.6f}, '
     + f'max={torch.max(learner2.P(X1)):12.6f}, '
 )
+
+t_end = time.time()
+
+print(f'Execution time={t_end - t_start:12.6f}')
