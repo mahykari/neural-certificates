@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH --job-name=test-learner  # create a short name for your job
-#SBATCH --output=test-learner    # output file
+#SBATCH --job-name=invpend       # create a short name for your job
+#SBATCH --output=invpend-100-0.0003-100-1.out    # output file
 #SBATCH --nodes=1                # node count
 #SBATCH --ntasks=1               # total number of tasks across all nodes
 #SBATCH --cpus-per-task=4        # cpu-cores per task (>1 if multi-threaded tasks)
@@ -9,11 +9,7 @@
 #SBATCH --mail-type=fail         # send email if job fails
 #SBATCH --mail-user=mahyar.karimi@ist.ac.at
 
-#SBATCH --partition=gpu          # define the "gpu" partition for GPU-accelerated jobs
-#SBATCH --gres=gpu:1             # define the number of GPUs used by your job
-
 module purge
-module load cuda/11.7
 module load python/3.10
 
 # Some packages (e.g., PyTorch), are already installed and configured to use
@@ -21,8 +17,8 @@ module load python/3.10
 # TODO. Set the environment properly; some packages should be inherited.
 
 # TODO. Change this command, so it actually does something.
-python -m ...
+source .venv/bin/activate
+python -m drafts.inverted_pendulum 000100 0.000300 000100 1.000000
 
 # deactivate
 # rm -rf .venv/
-
