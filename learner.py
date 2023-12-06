@@ -20,24 +20,24 @@ def nn_V_2d():
   layer enforces Nonnegativity and Target conditions.
   """
   net = nn.Sequential(
-    nn.Linear(2, 16, bias=False),
-    nn.ReLU(),
-    nn.Linear(16, 1, bias=False),
-    nn.ReLU()
+      nn.Linear(2, 16, bias=False),
+      nn.ReLU(),
+      nn.Linear(16, 1, bias=False),
+      nn.ReLU()
   )
 
   return net
 
+
 def nn_P_2d():
-  """Utility function to generate a default 3-color parity certificate for a
-  2D space. Zeroing bias terms and using ReLU activation on the last
-  layer enforces Nonnegativity and Target conditions.
+  """Utility function to generate a default 3-color parity
+  certificate (*P*rogress measure) for a 2D space.
   """
   net = nn.Sequential(
-    nn.Linear(2, 16, bias=False),
-    nn.ReLU(),
-    nn.Linear(16, 3, bias=False),
-    nn.ReLU()
+      nn.Linear(2, 16, bias=False),
+      nn.ReLU(),
+      nn.Linear(16, 3, bias=False),
+      nn.ReLU()
   )
 
   return net
@@ -47,9 +47,9 @@ def nn_A_2d():
   """Utility function to generate a default abstraction NN for a
   2D space."""
   return nn.Sequential(
-    nn.Linear(2, 4),
-    nn.ReLU(),
-    nn.Linear(4, 2),
+      nn.Linear(2, 4),
+      nn.ReLU(),
+      nn.Linear(4, 2),
   )
 
 
@@ -64,10 +64,10 @@ def nn_B_2d():
   || f - A ||.
   """
   return nn.Sequential(
-    nn.Linear(2, 4),
-    nn.ReLU(),
-    nn.Linear(4, 1),
-    nn.ReLU()
+      nn.Linear(2, 4),
+      nn.ReLU(),
+      nn.Linear(4, 1),
+      nn.ReLU()
   )
 
 
@@ -79,20 +79,60 @@ def nn_B_2d():
 # Learner_Reach_AC is a learner for property Reach, and contains a
 # NN for Abstraction (A) and Certificate (C).
 
-class Learner(ABC):
-  @abstractmethod
-  def __init__(self, env: Env, models: List[nn.Sequential]):
+class Learner:
+  """Base learner class. The base class implements a fit method,
+  which should be untouched in all subclasses; a change in `fit`
+  implies need for a change in the fitting mechanism."""
+
+  def init_optimizer(self, lr):
     ...
 
-  @abstractmethod
-  def fit(self, *args):
+  def loss(self, S):
     ...
 
-  @property
-  def device(self):
-    if torch.cuda.is_available():
-      return 'cuda'
-    return 'cpu'
+  def chk(self, S):
+    ...
+
+  def fit(self, S, n_epoch=512, batch_size=100, lr=1e-3, gamma=1.0):
+    """Fits V based on a predefined loss function.
+
+    Args:
+      S: a set of sampled points from the state space.
+    """
+
+    optimizer = self.init_optimizer(lr)
+    scheduler = optim.lr_scheduler.StepLR(
+        optimizer, step_size=n_epoch >> 6, gamma=gamma)
+
+    def training_step(s, optimizer):
+      optimizer.zero_grad()
+      loss = self.loss(s)
+      chk = self.chk(s)
+      loss.backward(retain_graph=True)
+      optimizer.step()
+      return loss, chk
+
+    def training_loop():
+      n_batch = len(S) // batch_size
+      n_step = n_epoch * n_batch
+      assert batch_size * n_batch == len(S)
+      loader = D.DataLoader(S, batch_size=batch_size, shuffle=True)
+      for e in range(n_epoch + 1):
+        for b_idx, s in enumerate(loader):
+          _, _ = training_step(s, optimizer)
+          step = e * n_batch + b_idx
+          if step % (n_step >> 4) != 0:
+            continue
+          print(
+              f'Step {step:>6}, '
+              + f'Loss={self.loss(S):12.6f}, '
+              + f'Chk={self.chk(S):12.6f}, '
+              # + f'|S|={len(S):>8}, '
+              + f'LR={scheduler.get_last_lr()[0]:10.8f}, ',
+          )
+        scheduler.step()
+
+    training_loop()
 
 
 class Learner_Reach_V(Learner):
@@ -121,9 +161,7 @@ class Learner_Reach_V(Learner):
     self.V.to(self.device)
     S = S.to(self.device)
 
-    optimizer = optim.SGD(
-      self.V.parameters(),
-      lr=learning_rate)
+    optimizer = optim.SGD(self.V.parameters(), lr=learning_rate)
 
     dataloader = D.DataLoader(S, batch_size=batch_size, shuffle=True)
     for e in range(n_epoch + 1):
@@ -136,11 +174,11 @@ class Learner_Reach_V(Learner):
       if e % (n_epoch >> 3) != 0:
         continue
       logger.debug(
-        f'Epoch {e:>5}. '
-        + f'Loss={self.loss_fn(S).item():>12.6f}, '
-        + f'Chk={self.chk(S).item():>8.6f}, '
-        + f'|S|={len(S):>8}, '
-        + f'L.R.={learning_rate:.6f}'
+          f'Epoch {e:>5}. '
+          + f'Loss={self.loss_fn(S).item():>12.6f}, '
+          + f'Chk={self.chk(S).item():>8.6f}, '
+          + f'|S|={len(S):>8}, '
+          + f'L.R.={learning_rate:.6f}'
       )
 
     torch.cuda.empty_cache()
@@ -175,6 +213,7 @@ class Learner_Reach_V(Learner):
   def chk(self, S, eps=0.01):
     S_nxt = self.env.f(S)
     return torch.max(torch.relu(self.V(S_nxt) - self.V(S) + eps))
+
 
 def sample_ball(dim: int, n_samples: int = 100):
   """Sampled points from the surface of a unit ball.
@@ -292,6 +331,7 @@ class Learner_Reach_ABV(Learner):
     # TODO. Update this check with actual values.
     return True
 
+
 class Learner_3Parity_P(Learner):
   def __init__(self, env, models):
     # Assumption. Cert is a fully-connected NN with ReLU activation
@@ -305,14 +345,12 @@ class Learner_3Parity_P(Learner):
     self.env = env
     self.P = models[0]
 
-
   def add_labels(self, S, C):
-    """Augments states with labels as an additional dimension
+    """Augment states with labels as an additional dimension.
 
     Args:
       S: set of sampled points from the state space.
-      C: the colors of the states in S; state S[i] has priority C[i] for
-            every i.
+      C: colors of the states in S; state S[i] has color C[i].
     """
     return torch.column_stack((S, C))
 
@@ -323,61 +361,12 @@ class Learner_3Parity_P(Learner):
       S_labeled: set of labeled states.
     """
     dim = S_labeled.size(1)
-    return S_labeled[:, 0:dim], S_labeled[:, dim]
+    return S_labeled[:, :-1], S_labeled[:, dim]
 
-  def fit(self, S, C):
-    """Fits P based on a predefined loss function.
+  def init_optimizer(self, lr):
+    return optim.SGD(self.P.parameters(), lr=lr)
 
-    Args:
-      S: sets of sampled points from the state space.
-      C: the colors of the states in S; state S[i] has priority C[i] for
-            every i.
-    """
-    n_epoch = 16
-    batch_size = 1000
-    learning_rate = 1e-3
-
-    self.P.to(self.device)
-    for i in range(3):
-        S[i] = S[i].to(self.device)
-
-    optimizer = optim.SGD(
-      self.P.parameters(),
-      lr=learning_rate)
-
-    S_labeled = add_labels(S, C)
-
-    dataloader = D.DataLoader(S_labeled, batch_size=batch_size, shuffle=True)
-    for e in range(n_epoch + 1):
-      for batch in dataloader:
-        optimizer.zero_grad()
-        loss = self.loss_fn(batch)
-        loss.backward()
-        nn.utils.clip_grad_norm_(self.P.parameters(), 1e3)
-        optimizer.step()
-      if e % (n_epoch >> 3) != 0:
-        continue
-      logger.debug(
-        f'Epoch {e:>5}. '
-        + f'Loss={self.loss_fn(S_labeled).item():>12.6f}, '
-        + f'Chk={self.chk(S_labeled).item():>8.6f}, '
-        + f'|S|={len(S_labeled):>8}, '
-        + f'L.R.={learning_rate:.6f}'
-      )
-
-    torch.cuda.empty_cache()
-    self.P.to('cpu')
-    S_labeled = S_labeled.to('cpu')
-
-
-    return S_labeled
-
-  def loss_fn(self, S_labeled):
-    """Aggregate loss function for the certificate NN.
-
-    New components can be added to the loss by defining new
-    functions and calling them in the expression evaluated below.
-    """
+  def loss(self, S):
     return 1e5 * self.loss_dec(S_labeled)
 
   def loss_dec(self, S_labeled, eps=1):
@@ -393,7 +382,7 @@ class Learner_3Parity_P(Learner):
 
     return torch.maximum(l0, torch.maximum(l1, l2))
 
-  def losses(self, S_labeled, eps):
+  def losses(self, S, eps):
     """Loss component for the lexicographic decrease condition.
 
     For any point x, this functions increases the loss if
@@ -406,47 +395,48 @@ class Learner_3Parity_P(Learner):
                         && P(f(x))[2] - P(x)[2] > 0
 
     This enforces the lexicographic decrease conditions:
-    x has priority 0: P(x) =>_0 P(f(x))
+    x has priority 0: P(x) >=_0 P(f(x))
     x has priority 1: P(x) >_1  P(f(x))
-    x has priority 2: P(x) =>_2 P(f(x))
+    x has priority 2: P(x) >=_2 P(f(x))
 
     Args:
       S: a batch of points sampled from outside the target space.
     """
-    S, C = self.rem_labels(S_labeled)
-    S_nxt = self.env.f(S)
-    # Xi for every x: positive if P(f(x))[i] - P(x)[i] > 0
-    # Yi for every x: positive if P(f(x))[i] - P(x)[i] + eps > 0
-    cex_ge_0 = torch.relu(self.P(S_nxt)[0] - self.P(S)[0])
-    cex_ge_1 = torch.relu(self.P(S_nxt)[1] - self.P(S)[1])
-    cex_ge_2 = torch.relu(self.P(S_nxt)[2] - self.P(S)[2])
+    X, C = S[:, :-1], S[:, -1:]
+    X_nxt = self.env.f(X)
+    # cex_ge_i for every x: positive if P(f(x))[i] - P(x)[i] > 0
+    # cex_gt_i for every x: positive if P(f(x))[i] - P(x)[i] + eps > 0
+    cex_ge_0 = torch.relu(self.P(X_nxt)[0] - self.P(X)[0])
+    cex_ge_1 = torch.relu(self.P(X_nxt)[1] - self.P(X)[1])
+    cex_ge_2 = torch.relu(self.P(X_nxt)[2] - self.P(X)[2])
 
-    cex_g_0 = torch.relu(self.P(S_nxt)[0] - self.P(S)[0] + eps)
-    cex_g_1 = torch.relu(self.P(S_nxt)[1] - self.P(S)[1] + eps)
-    cex_g_2 = torch.relu(self.P(S_nxt)[2] - self.P(S)[2] + eps)
+    cex_gt_0 = torch.relu(self.P(X_nxt)[0] - self.P(X)[0] + eps)
+    cex_gt_1 = torch.relu(self.P(X_nxt)[1] - self.P(X)[1] + eps)
+    # cex_g_2 = torch.relu(self.P(S_nxt)[2] - self.P(S)[2] + eps)
 
     def L0():
-      return cex_ge_0 * torch.where(C==0, 1.0, 0.0)
+      return cex_ge_0 * torch.where(C == 0, 1.0, 0.0)
 
     def L1():
-      Z = torch.where(C==1, 1.0, 0.0)
-      X0_ = cex_ge_0 * Z
-      Y0_ = cex_g_0 * Z
-      Y1_ = cex_g_1 * Z
-      return torch.maximum( X0_, torch.minimum( Y0_, Y1_ ))
+      color_mask = torch.where(C == 1, 1.0, 0.0)
+      X0_ = cex_ge_0 * color_mask
+      Y0_ = cex_gt_0 * color_mask
+      Y1_ = cex_gt_1 * color_mask
+      return torch.maximum(X0_, torch.minimum(Y0_, Y1_))
 
     def L2():
-      Z = torch.where(C==2, 1.0, 0.0)
-      X0_ = cex_ge_0 * Z
-      X1_ = cex_ge_1 * Z
-      X2_ = cex_ge_2 * Z
-      Y0_ = cex_g_0 * Z
-      Y1_ = cex_g_1 * Z
-      return torch.maximum( X0_,
-              torch.maximum(
-                  torch.minimum( Y0_, X1_ ),
-                  torch.minimum( Y0_, torch.minimum( Y1_, X2_ ))
-              )
+      color_mask = torch.where(C == 2, 1.0, 0.0)
+      X0_ = cex_ge_0 * color_mask
+      X1_ = cex_ge_1 * color_mask
+      X2_ = cex_ge_2 * color_mask
+      Y0_ = cex_gt_0 * color_mask
+      Y1_ = cex_gt_1 * color_mask
+      return torch.maximum(
+          X0_,
+          torch.maximum(
+              torch.minimum(Y0_, X1_),
+              torch.minimum(Y0_, torch.minimum(Y1_, X2_))
           )
+      )
 
     return L0(), L1(), L2()
