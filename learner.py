@@ -1,13 +1,10 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import List
 
 import torch
 import torch.nn as nn
 import torch.utils.data as D
 import torch.optim as optim
-
-from envs import Env
 
 
 logger = logging.getLogger(__name__)
@@ -79,17 +76,20 @@ def nn_B_2d():
 # Learner_Reach_AC is a learner for property Reach, and contains a
 # NN for Abstraction (A) and Certificate (C).
 
-class Learner:
+class Learner(ABC):
   """Base learner class. The base class implements a fit method,
   which should be untouched in all subclasses; a change in `fit`
   implies need for a change in the fitting mechanism."""
 
+  @abstractmethod
   def init_optimizer(self, lr):
     ...
 
+  @abstractmethod
   def loss(self, S):
     ...
 
+  @abstractmethod
   def chk(self, S):
     ...
 
@@ -127,7 +127,6 @@ class Learner:
               f'Step {step:>6}, '
               + f'Loss={self.loss(S):12.6f}, '
               + f'Chk={self.chk(S):12.6f}, '
-              # + f'|S|={len(S):>8}, '
               + f'LR={scheduler.get_last_lr()[0]:10.8f}, ',
           )
         scheduler.step()
@@ -367,12 +366,12 @@ class Learner_3Parity_P(Learner):
     return optim.SGD(self.P.parameters(), lr=lr)
 
   def loss(self, S):
-    return 1e5 * self.loss_dec(S_labeled)
+    return self.loss_dec(S)
 
   def loss_dec(self, S_labeled, eps=1):
     L0, L1, L2 = self.losses(S_labeled, eps)
 
-    return (torch.sum(L0) + torch.sum(L1) + torch.sum(L2))/3
+    return (torch.mean(L0) + torch.mean(L1) + torch.mean(L2)) / 3
 
   def chk(self, S_labeled, eps=0.01):
     L0, L1, L2 = self.losses(S_labeled, eps)
