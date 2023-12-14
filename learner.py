@@ -93,7 +93,14 @@ class Learner(ABC):
   def chk(self, S):
     ...
 
-  def fit(self, S, n_epoch=512, batch_size=100, lr=1e-3, gamma=1.0):
+  def fit(
+      self, S,
+      n_epoch=512,
+      batch_size=100,
+      lr=1e-3,
+      step_size=1,
+      gamma=1.0
+  ):
     """Fits V based on a predefined loss function.
 
     Args:
@@ -102,7 +109,7 @@ class Learner(ABC):
 
     optimizer = self.init_optimizer(lr)
     scheduler = optim.lr_scheduler.StepLR(
-        optimizer, step_size=n_epoch >> 6, gamma=gamma)
+        optimizer, step_size=step_size, gamma=gamma)
 
     def training_step(s, optimizer):
       optimizer.zero_grad()
