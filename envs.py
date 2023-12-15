@@ -1,3 +1,4 @@
+import math
 from abc import ABC, abstractproperty
 from typing import Callable
 
@@ -327,3 +328,99 @@ def F_CartPoleZeroActuation(x, g=9.8, l=1, M=2, m=1, b=0.2, c=0.2, tau=0.01):
     sp.Eq(fx[2], x[2] + x[3]*tau),
     sp.Eq(fx[3], x[3] + tau*(( g*torch.sin(x[2]) - x[1]*torch.cos(x[2]) - (Mf/(m*l)) )/((1+k)*l)))
   ]
+
+
+def box_diff(a: Box, b: Box):
+  """ Set difference of box b from box a
+    Prerequisite: b is included in the interior of a
+  """
+  c = Box(
+    low=a.low,
+    high=torch.Tensor([b.low[0],a.high[1]])
+  )
+
+  d = Box(
+    low=torch.Tensor([b.high[0],a.low[1]]),
+    high=a.high
+  )
+
+  e = Box(
+    low=torch.Tensor([b.low[0],a.low[1]]),
+    high=torch.Tensor([b.high[0],b.low[1]])
+  )
+
+  g = Box(
+    low=torch.Tensor([b.low[0],b.high[1]]),
+    high=torch.Tensor([b.high[0],a.high[1]])
+  )
+
+  return [c, d, e, g]
+
+
+class LimitCycle(Env):
+  """A simple 2-D system with semi-stable limit cycle."""
+  a_ = 0.2 # edge length of the C0 square
+  b_ = 0.8 # edge length of the C1 square
+  tau_ = 0.01 # Sampling times
+  dim = 2
+
+  bnd = Box(
+    low=torch.Tensor([-2, -2]),
+    high=torch.Tensor([2, 2]),
+  )
+
+  # States with color 0
+  C0 = Box(
+    low=torch.Tensor([-a_, -a_]),
+    high=torch.Tensor([a_, a_]),
+  )
+
+  # States with color 1: union of the boxes in C1_parts
+  C1_boundary = Box(
+    low=torch.Tensor([-b_,-b_]),
+    high=torch.Tensor([b_,b_])
+  )
+  C1_parts = box_diff(C1_boundary, C0)
+
+  # States with color 2: union of the boxes in C2_parts
+  C2_parts = box_diff(bnd, C1_boundary)
+
+  def __init__(
+      self):
+
+  def nxt(self, x: torch.Tensor):
+    """The transition function f: X -> X."""
+    # Convert x (in cartesian) to polar coordinates
+    r = x[0]**2 + x[1]**2
+    theta = math.atan2(x[1], x[0]) #theta in radians between -pi to +pi
+
+    # Progress the system by one step in polar coordinates
+    tau = self.tau_
+    r_new = r - r*((r-1)**2)*tau
+    theta_new = theta + tau
+
+    # Convert the states back to Cartesian coordinates
+    xx_a = r_new*math.cos(theta_new)
+    xx_b = r_new*math.sin(theta_new)
+
+    return torch.hstack([xx_a, xx_b])
+
+  # Alias for nxt, for simpler notation
+  f = nxt
+
+  @staticmethod
+  def sample():
+    """Returns a tuple of samples from different regions of the state
+    space.
+
+    Returns:
+      S: points sampled within the boundaries of the system, drawn
+      from a normal distribution.
+    """
+    # Samples in S are drawn from Normal(0, 1). They are then scaled
+    # so that they respect the state space bounds
+    S = torch.randn(16000, 2)
+    S *= torch.Tensor([4, 4])
+    S -= torch.Tensor([2, 2])
+
+    return S
