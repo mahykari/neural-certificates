@@ -369,8 +369,8 @@ class LimitCycle(Env):
     high=torch.Tensor([2, 2]),
   )
 
-  # States with color 0
-  C0 = Box(
+  # States with color 2
+  C2 = Box(
     low=torch.Tensor([-a_, -a_]),
     high=torch.Tensor([a_, a_]),
   )
@@ -380,10 +380,10 @@ class LimitCycle(Env):
     low=torch.Tensor([-b_,-b_]),
     high=torch.Tensor([b_,b_])
   )
-  C1_parts = box_diff(C1_boundary, C0)
+  C1_parts = box_diff(C1_boundary, C2)
 
-  # States with color 2: union of the boxes in C2_parts
-  C2_parts = box_diff(bnd, C1_boundary)
+  # States with color 0: union of the boxes in C0_parts
+  C0_parts = box_diff(bnd, C1_boundary)
 
   def __init__(
       self):
