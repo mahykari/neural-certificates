@@ -1,6 +1,5 @@
-import math
 from abc import ABC, abstractproperty
-from typing import Callable
+from typing import Callable, List  # noqa
 
 import sympy as sp
 import torch
@@ -245,6 +244,12 @@ def box_diff(a: Box, b: Box):
   """ Set difference of box b from box a
     Prerequisite: b is included in the interior of a
   """
+
+  # ASSUMPTION. a and b are both 2D.
+  assert (
+      a.low.shape[0] == b.low.shape[0] == 2 
+      and len(a.low.shape) == 1)
+  
   c = Box(
     low=a.low,
     high=torch.Tensor([b.low[0],a.high[1]])
@@ -268,70 +273,90 @@ def box_diff(a: Box, b: Box):
   return [c, d, e, g]
 
 
+def contains(boxes: List[Box], x: torch.Tensor):
+  result = torch.zeros_like(x[:, 0])
+  for box in boxes:
+    dim = len(box.low)
+    mask = torch.ones_like(x[:, 0])
+    for i in range(dim):
+      mask.logical_and_(x[:, i] >= box.low[i])
+      mask.logical_and_(x[:, i] <= box.high[i])
+    result.logical_or_(mask)
+  return result
+
+
 class LimitCycle(Env):
   """A simple 2-D system with semi-stable limit cycle."""
-  a_ = 0.2 # edge length of the C0 square
-  b_ = 0.8 # edge length of the C1 square
-  tau_ = 0.01 # Sampling times
+  A = 0.2  # edge length of the C0 square
+  B = 0.8  # edge length of the C1 square
+  TAU = 0.01  # Sampling times
   dim = 2
 
   bnd = Box(
-    low=torch.Tensor([-2, -2]),
-    high=torch.Tensor([2, 2]),
+      low=torch.Tensor([-2, -2]),
+      high=torch.Tensor([2, 2]),
   )
+
+  tgt = None
 
   # States with color 2
   C2 = Box(
-    low=torch.Tensor([-a_, -a_]),
-    high=torch.Tensor([a_, a_]),
+      low=torch.Tensor([-A, -A]),
+      high=torch.Tensor([A, A]),
   )
 
   # States with color 1: union of the boxes in C1_parts
   C1_boundary = Box(
-    low=torch.Tensor([-b_,-b_]),
-    high=torch.Tensor([b_,b_])
+      low=torch.Tensor([-B, -B]),
+      high=torch.Tensor([B, B])
   )
   C1_parts = box_diff(C1_boundary, C2)
 
   # States with color 0: union of the boxes in C0_parts
   C0_parts = box_diff(bnd, C1_boundary)
 
-  def __init__(
-      self):
+  def __init__(self):
+    pass
 
   def nxt(self, x: torch.Tensor):
     """The transition function f: X -> X."""
     # Convert x (in cartesian) to polar coordinates
-    r = x[0]**2 + x[1]**2
-    theta = math.atan2(x[1], x[0]) #theta in radians between -pi to +pi
+    r = torch.norm(x, p=2, dim=1)
+    # Theta in radians between -pi to +pi
+    theta = torch.atan2(x[:, 1], x[:, 0])
 
     # Progress the system by one step in polar coordinates
-    tau = self.tau_
-    r_new = r - r*((r-1)**2)*tau
+    tau = self.TAU
+    r_new = r - r * ((r - 1)**2) * tau
     theta_new = theta + tau
 
     # Convert the states back to Cartesian coordinates
-    xx_a = r_new*math.cos(theta_new)
-    xx_b = r_new*math.sin(theta_new)
+    x_new = torch.zeros_like(x)
+    x_new[:, 0] = r_new * torch.cos(theta_new)
+    x_new[:, 1] = r_new * torch.sin(theta_new)
 
-    return torch.hstack([xx_a, xx_b])
+    return x_new
 
   # Alias for nxt, for simpler notation
   f = nxt
 
   @staticmethod
-  def sample():
-    """Returns a tuple of samples from different regions of the state
-    space.
-
-    Returns:
-      S: points sampled within the boundaries of the system, drawn
-      from a normal distribution.
-    """
-    # Samples in S are drawn from Normal(0, 1). They are then scaled
-    # so that they respect the state space bounds
-    S = torch.randn(16000, 2)
+  def sample(n=16000):
+    S = torch.rand(n, 2)
     S *= torch.Tensor([4, 4])
     S -= torch.Tensor([2, 2])
 
     return S
+
+  def color_0(self, x):
+    return contains(self.C0_parts, x)
+
+  def color_1(self, x):
+    return contains(self.C1_parts, x)
+
+  def color_2(self, x):
+    return contains([self.C2], x)
+
+  def mark(self, x):
+    # Skipping color 0; anything not in colors 1 and 2 must be in 0.
+    return self.color_1(x) + 2 * self.color_2(x)
