@@ -28,17 +28,13 @@ goal_tolerance = 0.1
 mask_0 = torch.max(torch.abs(X), dim=-1).values <= goal_tolerance
 mask_0 = torch.unsqueeze(mask_0, dim=1)
 C = 1 - mask_0.int()
-print(C, torch.sum(C))
-print(X)
 S = torch.hstack((X, C))
-print(S)
 
-learner.fit(S, n_epoch=4, lr=1e-1)
+learner.fit(S, n_epoch=64, lr=3e-1)
 
 for i in torch.randint(0, len(S), (10,)):
   print(
-      f'x = {list(X[i])}, '
-      + f'c = {C[i].item()}, '
+      f'C = {C[i].item()}, '
       + f'P(x) = {learner.P(X[i:i+1, :]).detach()}, '
       + f'P(f(x)) = {learner.P(env.f(X[i:i+1])).detach()}, '
   )
