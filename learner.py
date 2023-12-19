@@ -134,7 +134,7 @@ class Learner(ABC):
               f'Step {step:>6}, '
               + f'Loss={self.loss(S):12.6f}, '
               + f'Chk={self.chk(S):12.6f}, '
-              + f'LR={scheduler.get_last_lr()[0]:10.8f}, ',
+              + f'LR={scheduler.get_last_lr()[0]:13.8f}, ',
           )
         scheduler.step()
 
@@ -340,109 +340,72 @@ class Learner_Reach_ABV(Learner):
 
 class Learner_3Parity_P(Learner):
   def __init__(self, env, models):
-    # Assumption. Cert is a fully-connected NN with ReLU activation
-    # after each hidden layer, as well as the output layer. We can
-    # simply assume cert to be an instance of nn.Sequential,
-    # initialized as follows:
-    # nn.Sequential(
-    #   nn.Linear(...),
-    #   nn.ReLU(),
-    #   ... )
     self.env = env
     self.P = models[0]
-
-  def add_labels(self, S, C):
-    """Augment states with labels as an additional dimension.
-
-    Args:
-      S: set of sampled points from the state space.
-      C: colors of the states in S; state S[i] has color C[i].
-    """
-    return torch.column_stack((S, C))
-
-  def rem_labels(self, S_labeled):
-    """Separate labeled states into states and their labels
-
-    Args:
-      S_labeled: set of labeled states.
-    """
-    dim = S_labeled.size(1)
-    return S_labeled[:, :-1], S_labeled[:, dim]
 
   def init_optimizer(self, lr):
     return optim.SGD(self.P.parameters(), lr=lr)
 
   def loss(self, S):
-    return self.loss_dec(S)
+    ls = self.color_loss(S)
+    assert torch.all(ls[0] * ls[1] * ls[2] == 0)
+    return torch.mean(sum(ls))
 
-  def loss_dec(self, S_labeled, eps=1):
-    L0, L1, L2 = self.losses(S_labeled, eps)
+  def chk(self, S, eps=0.01):
+    ls = self.color_loss(S, eps)
+    ls = [torch.max(l_) for l_ in ls]
+    return max(ls)
 
-    return (torch.mean(L0) + torch.mean(L1) + torch.mean(L2)) / 3
-
-  def chk(self, S_labeled, eps=0.01):
-    L0, L1, L2 = self.losses(S_labeled, eps)
-    l0 = torch.max(L0)
-    l1 = torch.max(L1)
-    l2 = torch.max(L2)
-
-    return torch.maximum(l0, torch.maximum(l1, l2))
-
-  def losses(self, S, eps):
+  def color_loss(self, S, eps=1):
     """Loss component for the lexicographic decrease condition.
-
-    For any point x, this functions increases the loss if
-    x has priority 0: P(f(x))[0] - P(x)[0] > 0
-    x has priority 1: P(f(x))[0] - P(x)[0] > 0 ||
-                P(f(x))[0] - P(x)[0] + eps > 0 && P(f(x))[1] - P(x)[1] + eps > 0
-    x has priority 2: P(f(x))[0] - P(x)[0] > 0 ||
-               P(f(x))[0] - P(x)[0] + eps > 0 && P(f(x))[1] - P(x)[1] > 0 ||
-               P(f(x))[0] - P(x)[0] + eps > 0 && P(f(x))[1] - P(x)[1] + eps > 0
-                        && P(f(x))[2] - P(x)[2] > 0
-
-    This enforces the lexicographic decrease conditions:
-    x has priority 0: P(x) >=_0 P(f(x))
-    x has priority 1: P(x) >_1  P(f(x))
-    x has priority 2: P(x) >=_2 P(f(x))
 
     Args:
       S: a batch of points sampled from outside the target space.
     """
+
+    # For a given single point x,
+    # we denote P(x) and P(f(x)) by p and p_nxt.
+    # Loss will not increase if and only if
+    # (x has priority 0) -> p[0] >= p_nxt[0]
+    # (x has priority 1) ->
+    #   p[0] >= p_nxt[0] and (
+    #     p[0] > p_nxt[0] or
+    #     p[1] > p_nxt[1])
+    # (x has priority 2) ->
+    #   p[0] >= p_nxt[0] and (
+    #     p_nxt[0] > p[0] or (
+    #       p[1] >= p_nxt[1] and (
+    #         p[1] > p_nxt[1] or p[2] >= p_nxt[2])))
+    #
+    # The loss will then  indicate
+    # cex's of the lexicographic decrease condition:
+    # (x has priority 0) -> P(x) >=_0 P(f(x))
+    # (x has priority 1) -> P(x) >_1  P(f(x))
+    # (x has priority 2) -> P(x) >=_2 P(f(x))
+
     X, C = S[:, :-1], S[:, -1:]
-    X_nxt = self.env.f(X)
-    # cex_ge_i for every x: positive if P(f(x))[i] - P(x)[i] > 0
-    # cex_gt_i for every x: positive if P(f(x))[i] - P(x)[i] + eps > 0
-    cex_ge_0 = torch.relu(self.P(X_nxt)[0] - self.P(X)[0])
-    cex_ge_1 = torch.relu(self.P(X_nxt)[1] - self.P(X)[1])
-    cex_ge_2 = torch.relu(self.P(X_nxt)[2] - self.P(X)[2])
+    p, p_nxt = self.P(X), self.P(self.env.f(X))
+    ind_ge = [torch.tensor([]) for _ in range(3)]
+    ind_gt = [torch.tensor([]) for _ in range(3)]
+    # For every x:
+    # ind_ge[i] is positive <-> p_nxt[i] - p[i] > 0
+    # cex_gt[i] is positive <-> p_nxt[i] - p[i] + eps > 0
+    for i in range(3):
+      ind_ge[i] = torch.relu(p_nxt[:, i] - p[:, i])
+      ind_gt[i] = torch.relu(p_nxt[:, i] - p[:, i] + eps)
+    # To take "conjunction" (or "disjunction") of two indicators,
+    # we take their min (or max).
+    tmin, tmax = torch.minimum, torch.maximum
+    ls = [torch.tensor([]) for _ in range(3)]
+    ls[0] = ind_ge[0]
+    ls[1] = tmax(ind_ge[0], tmin(ind_gt[0], ind_gt[1]))
+    ls[2] = tmax(
+        ind_ge[0], tmin(
+            ind_gt[0], tmax(
+                ind_ge[1], tmin(
+                    ind_gt[1], ind_ge[2]))))
 
-    cex_gt_0 = torch.relu(self.P(X_nxt)[0] - self.P(X)[0] + eps)
-    cex_gt_1 = torch.relu(self.P(X_nxt)[1] - self.P(X)[1] + eps)
-    # cex_g_2 = torch.relu(self.P(S_nxt)[2] - self.P(S)[2] + eps)
+    for i in range(3):
+      ls[i] = ls[i] * (C == i)
 
-    def L0():
-      return cex_ge_0 * torch.where(C == 0, 1.0, 0.0)
-
-    def L1():
-      color_mask = torch.where(C == 1, 1.0, 0.0)
-      X0_ = cex_ge_0 * color_mask
-      Y0_ = cex_gt_0 * color_mask
-      Y1_ = cex_gt_1 * color_mask
-      return torch.maximum(X0_, torch.minimum(Y0_, Y1_))
-
-    def L2():
-      color_mask = torch.where(C == 2, 1.0, 0.0)
-      X0_ = cex_ge_0 * color_mask
-      X1_ = cex_ge_1 * color_mask
-      X2_ = cex_ge_2 * color_mask
-      Y0_ = cex_gt_0 * color_mask
-      Y1_ = cex_gt_1 * color_mask
-      return torch.maximum(
-          X0_,
-          torch.maximum(
-              torch.minimum(Y0_, X1_),
-              torch.minimum(Y0_, torch.minimum(Y1_, X2_))
-          )
-      )
-
-    return L0(), L1(), L2()
+    return ls
