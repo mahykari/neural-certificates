@@ -22,19 +22,28 @@ env = LimitCycle()
 
 learner = Learner_3Parity_P(env, [nn_P_2d()])
 
-X = env.sample(18000)
+n_samples = 20000
+X = env.sample(n_samples)
 
 # Marking samples with colors
 C = env.mark(X)
 C = torch.unsqueeze(C, dim=1)
 
+plt.scatter(X[:, 0], X[:, 1], s=1, c=C)
+plt.show()
+plt.close()
+
 S = torch.cat((X, C), dim=1)
 
-learner.fit(S, n_epoch=64, lr=100, gamma=0.95)
+learner.fit(S, n_epoch=64, lr=1.5e0, batch_size=100)
+X = env.sample(10 * n_samples)
+C = env.mark(X).unsqueeze(dim=1)
+S = torch.cat((X, C), dim=1)
 
-for i in torch.randint(0, len(S), (10,)):
-  print(
-      f'C = {C[i].item()}, '
-      + f'P(x) = {learner.P(X[i:i+1, :]).detach()}, '
-      + f'P(f(x)) = {learner.P(env.f(X[i:i+1])).detach()}, '
-  )
+cl = learner.color_loss(S, eps=0.012345).detach()
+
+print(f'Loss. Max={torch.max(cl)}, Mean={torch.mean(cl)}')
+
+plt.scatter(X[:, 0], X[:, 1], s=1, c=cl > 0)
+plt.show()
+plt.close()
