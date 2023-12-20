@@ -31,9 +31,11 @@ def nn_P_2d():
   certificate (*P*rogress measure) for a 2D space.
   """
   net = nn.Sequential(
-      nn.Linear(2, 16, bias=False),
+      nn.Linear(2, 128, bias=True),
       nn.ReLU(),
-      nn.Linear(16, 3, bias=False),
+      nn.Linear(128, 128, bias=True),
+      nn.ReLU(),
+      nn.Linear(128, 3, bias=True),
       nn.ReLU()
   )
 
@@ -347,14 +349,14 @@ class Learner_3Parity_P(Learner):
     return optim.SGD(self.P.parameters(), lr=lr)
 
   def loss(self, S):
-    ls = self.color_loss(S)
-    assert torch.all(ls[0] * ls[1] * ls[2] == 0)
-    return torch.mean(sum(ls))
+    cl = self.color_loss(S)
+    return torch.mean(cl)
 
-  def chk(self, S, eps=0.01):
-    ls = self.color_loss(S, eps)
-    ls = [torch.max(l_) for l_ in ls]
-    return max(ls)
+  def chk(self, S, eps=0.012345):
+    # The value for eps is specifically chosen
+    # so that it indicates when the model always predicts 0.
+    cl = self.color_loss(S, eps)
+    return torch.max(cl)
 
   def color_loss(self, S, eps=1):
     """Loss component for the lexicographic decrease condition.
@@ -384,6 +386,7 @@ class Learner_3Parity_P(Learner):
     # (x has priority 2) -> P(x) >=_2 P(f(x))
 
     X, C = S[:, :-1], S[:, -1:]
+    C = torch.squeeze(C)
     p, p_nxt = self.P(X), self.P(self.env.f(X))
     ind_ge = [torch.tensor([]) for _ in range(3)]
     ind_gt = [torch.tensor([]) for _ in range(3)]
@@ -395,17 +398,25 @@ class Learner_3Parity_P(Learner):
       ind_gt[i] = torch.relu(p_nxt[:, i] - p[:, i] + eps)
     # To take "conjunction" (or "disjunction") of two indicators,
     # we take their min (or max).
-    tmin, tmax = torch.minimum, torch.maximum
-    ls = [torch.tensor([]) for _ in range(3)]
-    ls[0] = ind_ge[0]
-    ls[1] = tmax(ind_ge[0], tmin(ind_gt[0], ind_gt[1]))
-    ls[2] = tmax(
+    # tmin, tmax = torch.minimum, torch.maximum
+
+    def tmax(x, y):
+      return torch.maximum(x, y)
+
+    def tmin(x, y):
+      return torch.minimum(x, y)
+    cl = [torch.tensor([]) for _ in range(3)]
+    cl[0] = ind_ge[0]
+    cl[1] = tmax(ind_ge[0], tmin(ind_gt[0], ind_gt[1]))
+    cl[2] = tmax(
         ind_ge[0], tmin(
             ind_gt[0], tmax(
                 ind_ge[1], tmin(
                     ind_gt[1], ind_ge[2]))))
 
     for i in range(3):
-      ls[i] = ls[i] * (C == i)
+      cl[i] = cl[i] * (C == i)
 
-    return ls
+    assert torch.all(cl[0] * cl[1] * cl[2] == 0)
+
+    return sum(cl)
