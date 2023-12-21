@@ -360,3 +360,79 @@ class LimitCycle(Env):
   def mark(self, x):
     # Skipping color 0; anything not in colors 1 and 2 must be in 0.
     return self.color_1(x) + 2 * self.color_2(x)
+
+
+def coord2box(coord):
+  low = torch.Tensor(coord)
+  return Box(low=low, high=low + 1)
+
+
+class Map3x3(Env):
+  # 3x3 tiled map, with colors:
+  # 2 2 2
+  # 1 1 2
+  # 0 1 2
+  # and transitions:
+  # R R D
+  # U D U
+  # R L L
+  # (R, U, L, D) = (Right, Up, Left, Down)
+  dim = 2
+
+  bnd = Box(
+      low=torch.Tensor([0, 0]),
+      high=torch.Tensor([3, 3]),
+  )
+
+  tgt = None
+
+  # Rows are inverted.
+  colors = torch.Tensor([
+      [0, 1, 2],
+      [1, 1, 2],
+      [2, 2, 2],
+  ]).int().T
+
+  dirs = torch.Tensor([
+      [1, 0],  # R
+      [0, 1],  # U
+      [-1, 0],  # L
+      [0, -1],  # D
+  ])
+
+  cell_dirs = torch.Tensor([
+      [0, 2, 2],
+      [1, 3, 1],
+      [0, 0, 3],
+  ]).int().T
+
+  def color_0(self, x):
+    coord = x.floor().int()
+    idx = coord[:, 0], coord[:, 1]
+    return self.colors[idx] == 0
+
+  def color_1(self, x):
+    coord = x.floor().int()
+    idx = coord[:, 0], coord[:, 1]
+    return self.colors[idx] == 1
+
+  def color_2(self, x):
+    coord = x.floor().int()
+    idx = coord[:, 0], coord[:, 1]
+    return self.colors[idx] == 2
+
+  def mark(self, x):
+    return self.color_1(x) + 2 * self.color_2(x)
+
+  def nxt(self, x):
+    coord = x.floor().int()
+    idx = coord[:, 0], coord[:, 1]
+    cd = self.cell_dirs[idx]
+    d = self.dirs[cd]
+    # print(torch.cat((x, coord, x + d), dim=1))
+    return x + d
+
+  f = nxt
+
+  def sample(self, n_samples):
+    return torch.rand(n_samples, 2) * 3
