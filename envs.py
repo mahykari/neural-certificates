@@ -474,6 +474,70 @@ class Unicycle(Env):
     return contains(self.C2, x)
 
 
+class Reservoir(Env):
+  """A simple 1-dimensional water reservoir"""
+  # the state represents the water level, where level 0 corresponds to reservoir being empty
+  bnd_x = Box(
+    low=[0.0],
+    high=[10.0]
+  )
+  # the control input represents the rate of outward flow of water from the reservoir
+  bnd_u = Box(
+    low=[0.0],
+    high=[0.5]
+  )
+  # the (random) noise represents the water flow into the reservoir
+  bnd_w = Box(
+    low=[0.0],
+    high=[1.0]
+  )
+  # sampling time
+  TAU = 0.05
+  # specification: GF HIGH -> GF LOW, where HIGH and LOW represent water levels with HIGH > LOW
+  HIGH = 9.0
+  LOW = 5.0
+  C0 = Box(
+    low=[bnd_x.low[0]],
+    high=[LOW]
+  )
+  C1 = Box(
+    low=[HIGH],
+    high=[bnd_x.high[0]]
+  )
+  C2 = Box(
+    low=[LOW],
+    high=[HIGH]
+  )
+  # dynamics
+  def __init__(self):
+    pass
+
+  def nxt(self, x: torch.Tensor, u: torch.Tensor, w: torch.Tensor):
+    """The transition function f: X x U x W -> X."""
+    tau = self.TAU
+    x_new = torch.zeros_like(x)
+    x_new[:, 0] = x[:, 0] - u[:, 0] * tau + w[:, 0] * tau
+    x_new[:, 0] = min(x_new[:, 0], self.bnd_x.high[0]) # saturate at the maximum water level
+    return x_new
+
+  # Alias for nxt, for simpler notation
+  f = nxt
+
+  @staticmethod
+  def sample(n=16000):
+    S = torch.rand(n, 3)
+    S *= torch.Tensor([10, 5, 1])
+    return S
+
+  def color_0(self, x):
+    return contains([self.C0], x)
+
+  def color_1(self, x):
+    return contains([self.C1], x)
+
+  def color_2(self, x):
+    return contains([self.C2], x)
+
 class Map3x3(Env):
   # 3x3 tiled map, with colors:
   # 2 2 2
