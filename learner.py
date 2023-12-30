@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F  # noqa
 import torch.utils.data as D
 import torch.optim as optim
 
@@ -31,12 +32,12 @@ def nn_P_2d():
   certificate (*P*rogress measure) for a 2D space.
   """
   net = nn.Sequential(
-      nn.Linear(2, 128, bias=True),
-      nn.ReLU(),
-      nn.Linear(128, 128, bias=True),
-      nn.ReLU(),
-      nn.Linear(128, 3, bias=True),
-      nn.ReLU()
+      nn.Linear(2, 128),
+      nn.Tanh(),
+      nn.Linear(128, 128),
+      nn.Tanh(),
+      nn.Linear(128, 3),
+      nn.Softplus()
   )
 
   return net
@@ -110,8 +111,10 @@ class Learner(ABC):
     """
 
     optimizer = self.init_optimizer(lr)
+    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer)
     scheduler = optim.lr_scheduler.StepLR(
         optimizer, step_size=step_size, gamma=gamma)
+    el = []
 
     def training_step(s, optimizer):
       optimizer.zero_grad()
@@ -122,25 +125,28 @@ class Learner(ABC):
       return loss, chk
 
     def training_loop():
-      n_batch = len(S) // batch_size
-      n_step = n_epoch * n_batch
-      assert batch_size * n_batch == len(S)
-      loader = D.DataLoader(S, batch_size=batch_size, shuffle=True)
+      n_batch = (len(S) + batch_size - 1) // batch_size
+      assert batch_size * n_batch >= len(S)
+      loader = D.DataLoader(S, batch_size=batch_size)
+      step = 0
       for e in range(n_epoch + 1):
+        epoch_loss = 0
         for b_idx, s in enumerate(loader):
-          _, _ = training_step(s, optimizer)
-          step = e * n_batch + b_idx
-          if step % (n_step >> 4) != 0:
-            continue
-          print(
-              f'Step {step:>6}, '
-              + f'Loss={self.loss(S):12.6f}, '
-              + f'Chk={self.chk(S):12.6f}, '
-              + f'LR={scheduler.get_last_lr()[0]:13.8f}, ',
-          )
+          loss, _ = training_step(s, optimizer)
+          epoch_loss += loss
+          step += 1
+        el.append(epoch_loss.detach())
+        chk = self.chk(S)
+        print(
+            f'Epoch {e:>4} (Step {step:>6}), '
+            + f'Epoch loss={epoch_loss:12.6f}, '
+            + f'Chk={chk:12.6f}, '
+            + f'LR={optimizer.param_groups[0]["lr"]:13.8f}, ',
+        )
         scheduler.step()
 
     training_loop()
+    return el
 
 
 class Learner_Reach_V(Learner):
@@ -346,7 +352,9 @@ class Learner_3Parity_P(Learner):
     self.P = models[0]
 
   def init_optimizer(self, lr):
-    return optim.SGD(self.P.parameters(), lr=lr)
+    return optim.SGD(
+        self.P.parameters(),
+        lr=lr)
 
   def loss(self, S):
     cl = self.color_loss(S)
@@ -356,7 +364,7 @@ class Learner_3Parity_P(Learner):
     # The value for eps is specifically chosen
     # so that it indicates when the model always predicts 0.
     cl = self.color_loss(S, eps)
-    return torch.max(cl)
+    return torch.mean((cl > 0.0).float()) * 100
 
   def color_loss(self, S, eps=1):
     """Loss component for the lexicographic decrease condition.
@@ -394,8 +402,8 @@ class Learner_3Parity_P(Learner):
     # ind_ge[i] is positive <-> p_nxt[i] - p[i] > 0
     # cex_gt[i] is positive <-> p_nxt[i] - p[i] + eps > 0
     for i in range(3):
-      ind_ge[i] = torch.relu(p_nxt[:, i] - p[:, i])
-      ind_gt[i] = torch.relu(p_nxt[:, i] - p[:, i] + eps)
+      ind_ge[i] = F.relu((p_nxt[:, i] - p[:, i]))
+      ind_gt[i] = F.relu((p_nxt[:, i] - p[:, i] + eps))
     # To take "conjunction" (or "disjunction") of two indicators,
     # we take their min (or max).
     # tmin, tmax = torch.minimum, torch.maximum
@@ -407,12 +415,16 @@ class Learner_3Parity_P(Learner):
       return torch.minimum(x, y)
     cl = [torch.tensor([]) for _ in range(3)]
     cl[0] = ind_ge[0]
-    cl[1] = tmax(ind_ge[0], tmin(ind_gt[0], ind_gt[1]))
-    cl[2] = tmax(
-        ind_ge[0], tmin(
-            ind_gt[0], tmax(
-                ind_ge[1], tmin(
-                    ind_gt[1], ind_ge[2]))))
+    # cl[1] = tmax(ind_ge[0], tmin(ind_gt[0], ind_gt[1]))
+    cl[1] = ind_ge[0] + 2 * ind_gt[0] * ind_gt[1]
+    # cl[2] = tmax(
+    #     ind_ge[0], tmin(
+    #         ind_gt[0], tmax(
+    #             ind_ge[1], tmin(
+    #                 ind_gt[1], ind_ge[2]))))
+    cl[2] = ind_ge[0] + 2 * ind_gt[0] * (
+        ind_ge[1] + 2 * ind_gt[1] * ind_ge[2]
+    )
 
     for i in range(3):
       cl[i] = cl[i] * (C == i)
