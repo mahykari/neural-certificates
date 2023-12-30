@@ -1,3 +1,4 @@
+import math
 from abc import ABC, abstractproperty
 from typing import Callable, List  # noqa
 
@@ -365,6 +366,112 @@ class LimitCycle(Env):
 def coord2box(coord):
   low = torch.Tensor(coord)
   return Box(low=low, high=low + 1)
+
+
+class Unicycle(Env):
+  """A simple unicycle path planning problem."""
+  n_g0 = 8 # number of grid elements in the 0-th dimension
+  n_g1 = 8 # number of grid elements in the 1st dimension
+  n_c0 = 1 # number of (randomly selected) grid elements with color 0
+  n_c1 = 10 # number of (randomly selected) grid elements with color 1
+  # sanity check
+  if n_c0 + n_c1 > n_g0 * n_g1:
+    print('More grid cells to be colored than are present.')
+    exit(-1)
+  elif n_c0 + n_c1 == n_g0 * n_g1:
+    print('WARNING: no grid cell has color 2.')
+
+  # bounds on the state space
+  bnd_x = Box(
+    low=torch.Tensor([-2, -2, -3.2]),
+    high=torch.Tensor([2, 2, 3.2]),
+  )
+  # bounds on the input space
+  bnd_u = Box(
+    low=torch.Tensor([-1, -10]),
+    high=torch.Tensor([1, 10])
+  )
+  # Other parameters
+  TAU = 0.01  # Sampling times
+  dim_x = 3
+  dim_u = 2
+
+  tgt = None
+
+  # randomly assign colors to grid cells
+  grid_colors = torch.fill(n_g0, n_g1, 2) # every cell has color 2 by default
+  for k in range(n_c0): # randomly mark n_c0 many cells with color 0
+    i = torch.randint(0, n_g0 - 1)
+    j = torch.randint(0, n_g1 - 1)
+    grid_colors[i][j] = 0
+  for k in range(n_c1): # randomly mark n_c1 many cells (which are not assigned 0 already) with color 1
+    i = torch.randint(0, n_g0 - 1)
+    j = torch.randint(0, n_g1 - 1)
+    if grid_colors[i][j] != 0:
+      grid_colors[i][j] = 1
+    else:
+      k = k - 1
+
+  # defined colored boxes
+  # the grid cells are indexed  using the following convention:
+  #
+  # (n_g1 - 1, 0)       ...       (n_g1 - 1, n_g0 - 1)
+  #   :
+  # (2,0)
+  # (1,0)
+  # (0,0)   (0,1)   (0,2)   ...   (0, n_g0 - 1)
+
+  # dimensions of each grid cell
+  eta_x = torch.div(torch.sub(bnd_x.high[0:1], bnd_x.low[0:1]), torch.Tensor([n_g0, n_g1]))
+  C0, C1, C2 = [], [], []
+  for i in range(n_g0):
+    for j in range(n_g1):
+      b = Box(
+        low=torch.Tensor([bnd_x.low[0] + i * eta_x[0], bnd_x.low[1] + j * eta_x[1]]),
+        high=torch.Tensor([bnd_x.low[0] + (i + 1) * eta_x[0], bnd_x.low[1] + (j + 1) * eta_x[1]])
+      )
+      if grid_colors[i][j] == 0:
+        C0.append(b)
+      elif grid_colors[i][j] == 1:
+        C1.append(b)
+      elif grid_colors[i][j] == 2:
+        C2.append(b)
+      else:
+        print('Something wrong with the grid color assignments. Exiting.')
+        exit(-1)
+
+  def __init__(self):
+    pass
+
+  def nxt(self, x: torch.Tensor, u: torch.Tensor):
+    """The transition function f: X x U -> X."""
+    tau = self.TAU
+    x_new = torch.zeros_like(x)
+    x_new[:, 0] = x[:, 0] + u[:, 0] * math.cos(x[:, 0]) * tau
+    x_new[:, 1] = x[:, 1] + u[:, 0] * math.cos(x[:, 1]) * tau
+    x_new[:, 2] = x[:, 2] + u[:, 1] * tau
+
+    return x_new
+
+  # Alias for nxt, for simpler notation
+  f = nxt
+
+  @staticmethod
+  def sample(n=16000):
+    S = torch.rand(n, 5)
+    S *= torch.Tensor([4, 4, 6.4, 2, 20])
+    S -= torch.Tensor([2, 2, 3.2, 1, 10])
+
+    return S
+
+  def color_0(self, x):
+    return contains(self.C0, x)
+
+  def color_1(self, x):
+    return contains(self.C1, x)
+
+  def color_2(self, x):
+    return contains(self.C2, x)
 
 
 class Map3x3(Env):
