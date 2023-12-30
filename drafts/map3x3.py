@@ -22,7 +22,7 @@ env = Map3x3()
 
 learner = Learner_3Parity_P(env, [nn_P_2d()])
 
-n_samples = 20000
+n_samples = 200
 X = env.sample(n_samples)
 
 # Marking samples with colors
@@ -34,8 +34,9 @@ plt.show()
 plt.close()
 
 S = torch.cat((X, C), dim=1)
+print(S)
 
-learner.fit(S, n_epoch=512, batch_size=1000, lr=7e-3)
+learner.fit(S, n_epoch=256, batch_size=9, lr=0.11)
 X = env.sample(10 * n_samples)
 C = env.mark(X).unsqueeze(dim=1)
 S = torch.cat((X, C), dim=1)
