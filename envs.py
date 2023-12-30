@@ -517,7 +517,7 @@ class Reservoir(Env):
     tau = self.TAU
     x_new = torch.zeros_like(x)
     x_new[:, 0] = x[:, 0] - u[:, 0] * tau + w[:, 0] * tau
-    x_new[:, 0] = min(x_new[:, 0], self.bnd_x.high[0]) # saturate at the maximum water level
+    x_new[:, 0] = max(self.bnd_x.low[0], min(x_new[:, 0], self.bnd_x.high[0])) # saturate at the boundaries
     return x_new
 
   # Alias for nxt, for simpler notation
