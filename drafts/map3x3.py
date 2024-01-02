@@ -22,8 +22,11 @@ env = Map3x3()
 
 learner = Learner_3Parity_P(env, [nn_P_2d()])
 
-n_samples = 200
-X = env.sample(n_samples)
+# n_samples = 20000
+# X = env.sample(n_samples)
+X = torch.linspace(0, 2.99, 100)
+X = torch.cartesian_prod(X, X)
+n_samples = X.shape[0]
 
 # Marking samples with colors
 C = env.mark(X)
@@ -36,15 +39,13 @@ plt.close()
 S = torch.cat((X, C), dim=1)
 print(S)
 
-learner.fit(S, n_epoch=256, batch_size=9, lr=0.11)
+learner.fit(S, n_epoch=1024, batch_size=20000, lr=3)
 X = env.sample(10 * n_samples)
 C = env.mark(X).unsqueeze(dim=1)
 S = torch.cat((X, C), dim=1)
 
-cl = learner.color_loss(S, eps=0.012345).detach()
+cl = learner.chk(S, eps=0.012345, verbose=True).detach()
 
-print(f'Loss. Max={torch.max(cl)}, Mean={torch.mean(cl)}')
-
-plt.scatter(X[:, 0], X[:, 1], s=1, c=cl > 0)
+plt.scatter(X[:, 0], X[:, 1], s=1, c=cl == 0)
 plt.show()
 plt.close()
