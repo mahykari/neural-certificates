@@ -360,11 +360,33 @@ class Learner_3Parity_P(Learner):
     cl = self.color_loss(S)
     return torch.mean(cl)
 
-  def chk(self, S, eps=0.012345):
+  def chk(self, S, eps=0.012345, verbose=False):
     # The value for eps is specifically chosen
     # so that it indicates when the model always predicts 0.
-    cl = self.color_loss(S, eps)
-    return torch.mean((cl > 0.0).float()) * 100
+    X, C = S[:, :-1], S[:, -1:]
+    C = torch.squeeze(C)
+    p, p_nxt = self.P(X), self.P(self.env.f(X))
+    cc = [torch.tensor([]) for _ in range(3)]
+    cc[0] = p[:, 0] >= p_nxt[:, 0]
+    cc[1] = torch.logical_and(
+        p[:, 0] >= p_nxt[:, 0],
+        torch.logical_or(
+          p[:, 0] > p_nxt[:, 0], p[:, 1] > p_nxt[:, 1]))
+    cc[2] = torch.logical_and(
+      p[:, 0] >= p_nxt[:, 0], torch.logical_or(
+        p[:, 0] > p_nxt[:, 0], torch.logical_and(
+          p[:, 1] >= p_nxt[:, 1], torch.logical_or(
+            p[:, 1] > p_nxt[:, 1], p[:, 2] >= p_nxt[:, 2]))))
+    for i in range(3):
+      cc[i] = cc[i] * (C == i)
+
+    assert torch.all(cc[0] * cc[1] * cc[2] == 0)
+    cc = sum(cc)
+    if verbose:
+      return cc
+    return torch.mean((cc == 1).float()) * 100
+    # cl = self.color_loss(S, eps)
+    # return torch.mean((cl > 0.0).float()) * 100
 
   def color_loss(self, S, eps=1):
     """Loss component for the lexicographic decrease condition.
@@ -402,8 +424,8 @@ class Learner_3Parity_P(Learner):
     # ind_ge[i] is positive <-> p_nxt[i] - p[i] > 0
     # cex_gt[i] is positive <-> p_nxt[i] - p[i] + eps > 0
     for i in range(3):
-      ind_ge[i] = F.relu((p_nxt[:, i] - p[:, i]))
-      ind_gt[i] = F.relu((p_nxt[:, i] - p[:, i] + eps))
+      ind_ge[i] = F.sigmoid((p_nxt[:, i] - p[:, i]))
+      ind_gt[i] = F.sigmoid((p_nxt[:, i] - p[:, i] + eps))
     # To take "conjunction" (or "disjunction") of two indicators,
     # we take their min (or max).
     # tmin, tmax = torch.minimum, torch.maximum
