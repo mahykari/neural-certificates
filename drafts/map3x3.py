@@ -4,7 +4,7 @@ import sys  # noqa
 import torch
 from matplotlib import pyplot as plt  # noqa
 
-from learner import Learner_3Parity_P, nn_P_2d
+from learner import Learner_3Parity_P, nn_P
 from envs import Map3x3
 
 # Logging setup
@@ -24,7 +24,7 @@ n_epoch, batch_size, lr = int(n_epoch), int(batch_size), float(lr)
 
 env = Map3x3()
 
-learner = Learner_3Parity_P(env, [nn_P_2d()])
+learner = Learner_3Parity_P(env, [nn_P(2)])
 
 n_div = 100
 X = torch.linspace(0, 3 - 1 / n_div, n_div)

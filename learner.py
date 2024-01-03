@@ -27,12 +27,12 @@ def nn_V_2d():
   return net
 
 
-def nn_P_2d():
+def nn_P(n_dims):
   """Utility function to generate a default 3-color parity
   certificate (*P*rogress measure) for a 2D space.
   """
   net = nn.Sequential(
-      nn.Linear(2, 128),
+      nn.Linear(n_dims, 128),
       nn.Tanh(),
       nn.Linear(128, 128),
       nn.Tanh(),
