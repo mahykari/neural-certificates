@@ -66,8 +66,8 @@ X = env.sample(10 * n_samples)
 C = env.mark(X).unsqueeze(dim=1)
 S = torch.cat((X, C), dim=1)
 
-cl = learner.color_chk(S, eps=0.012345, verbose=True).detach()
+cc = learner.color_chk(S, eps=0.012345, verbose=True).detach()
 
-plt.scatter(X[:, 0], X[:, 1], s=1, c=cl == 0)
+plt.scatter(X[:, 0], X[:, 1], s=1, c=cc == 0)
 plt.show()
 plt.close()
