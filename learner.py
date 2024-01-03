@@ -357,10 +357,14 @@ class Learner_3Parity_P(Learner):
         lr=lr)
 
   def loss(self, S):
-    cl = self.color_loss(S)
+    cl = self.color_loss(S, eps=1e-4)
     return torch.mean(cl)
 
-  def chk(self, S, eps=0.012345, verbose=False):
+  def chk(self, S):
+    cc = self.color_chk(S, eps=0.012345)
+    return torch.mean((cc == 1).float()) * 100
+
+  def color_chk(self, S, eps=0.012345, verbose=False):
     # The value for eps is specifically chosen
     # so that it indicates when the model always predicts 0.
     X, C = S[:, :-1], S[:, -1:]
@@ -371,22 +375,18 @@ class Learner_3Parity_P(Learner):
     cc[1] = torch.logical_and(
         p[:, 0] >= p_nxt[:, 0],
         torch.logical_or(
-          p[:, 0] > p_nxt[:, 0], p[:, 1] > p_nxt[:, 1]))
+            p[:, 0] > p_nxt[:, 0], p[:, 1] > p_nxt[:, 1]))
     cc[2] = torch.logical_and(
-      p[:, 0] >= p_nxt[:, 0], torch.logical_or(
-        p[:, 0] > p_nxt[:, 0], torch.logical_and(
-          p[:, 1] >= p_nxt[:, 1], torch.logical_or(
-            p[:, 1] > p_nxt[:, 1], p[:, 2] >= p_nxt[:, 2]))))
+        p[:, 0] >= p_nxt[:, 0], torch.logical_or(
+            p[:, 0] > p_nxt[:, 0], torch.logical_and(
+                p[:, 1] >= p_nxt[:, 1], torch.logical_or(
+                    p[:, 1] > p_nxt[:, 1], p[:, 2] >= p_nxt[:, 2]))))
     for i in range(3):
       cc[i] = cc[i] * (C == i)
 
     assert torch.all(cc[0] * cc[1] * cc[2] == 0)
     cc = sum(cc)
-    if verbose:
-      return cc
-    return torch.mean((cc == 1).float()) * 100
-    # cl = self.color_loss(S, eps)
-    # return torch.mean((cl > 0.0).float()) * 100
+    return cc
 
   def color_loss(self, S, eps=1):
     """Loss component for the lexicographic decrease condition.
@@ -397,7 +397,7 @@ class Learner_3Parity_P(Learner):
 
     # For a given single point x,
     # we denote P(x) and P(f(x)) by p and p_nxt.
-    # Loss will not increase if and only if
+    # Loss will be zero if and only if
     # (x has priority 0) -> p[0] >= p_nxt[0]
     # (x has priority 1) ->
     #   p[0] >= p_nxt[0] and (
@@ -409,10 +409,12 @@ class Learner_3Parity_P(Learner):
     #       p[1] >= p_nxt[1] and (
     #         p[1] > p_nxt[1] or p[2] >= p_nxt[2])))
     #
-    # The loss will then  indicate
+    # Also note that loss is always, by definition,
+    # a non-negative value.
+    # The loss will then indicate
     # cex's of the lexicographic decrease condition:
     # (x has priority 0) -> P(x) >=_0 P(f(x))
-    # (x has priority 1) -> P(x) >_1  P(f(x))
+    # (x has priority 1) -> P(x)  >_1 P(f(x))
     # (x has priority 2) -> P(x) >=_2 P(f(x))
 
     X, C = S[:, :-1], S[:, -1:]
@@ -424,29 +426,19 @@ class Learner_3Parity_P(Learner):
     # ind_ge[i] is positive <-> p_nxt[i] - p[i] > 0
     # cex_gt[i] is positive <-> p_nxt[i] - p[i] + eps > 0
     for i in range(3):
-      ind_ge[i] = F.sigmoid((p_nxt[:, i] - p[:, i]))
-      ind_gt[i] = F.sigmoid((p_nxt[:, i] - p[:, i] + eps))
-    # To take "conjunction" (or "disjunction") of two indicators,
-    # we take their min (or max).
-    # tmin, tmax = torch.minimum, torch.maximum
+      ind_ge[i] = F.relu(p_nxt[:, i] - p[:, i])
+      ind_gt[i] = F.sigmoid(p_nxt[:, i] - p[:, i] + eps)
+    # To take "conjunction" (or "disjunction") of
+    # indicators I1 and I2,
+    # we take I1 + I2 (or I1 * I2 * scaling_factor).
+    # The scaling factor is for
+    # avoiding vanishing values.
 
-    def tmax(x, y):
-      return torch.maximum(x, y)
-
-    def tmin(x, y):
-      return torch.minimum(x, y)
     cl = [torch.tensor([]) for _ in range(3)]
     cl[0] = ind_ge[0]
-    # cl[1] = tmax(ind_ge[0], tmin(ind_gt[0], ind_gt[1]))
     cl[1] = ind_ge[0] + 2 * ind_gt[0] * ind_gt[1]
-    # cl[2] = tmax(
-    #     ind_ge[0], tmin(
-    #         ind_gt[0], tmax(
-    #             ind_ge[1], tmin(
-    #                 ind_gt[1], ind_ge[2]))))
     cl[2] = ind_ge[0] + 2 * ind_gt[0] * (
-        ind_ge[1] + 2 * ind_gt[1] * ind_ge[2]
-    )
+        ind_ge[1] + 2 * ind_gt[1] * ind_ge[2])
 
     for i in range(3):
       cl[i] = cl[i] * (C == i)
