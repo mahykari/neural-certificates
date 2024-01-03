@@ -10,14 +10,7 @@ from envs import Map3x3
 # Logging setup
 root_logger = logging.getLogger('')
 handler = logging.StreamHandler()
-formatter = logging.Formatter(
-    fmt='%(asctime)s - %(module)-8s - %(levelname)-6s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S')
-handler.setFormatter(formatter)
 root_logger.addHandler(handler)
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 # For THIS EXACT CONFIGURATION,
 # the values below can be good options:
