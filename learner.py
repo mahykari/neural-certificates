@@ -17,22 +17,22 @@ logger.setLevel(logging.DEBUG)
 # n being the number of inputs to a given neuron
 # source: https://medium.com/ai%C2%B3-theory-practice-business/initializing-the-weights-in-nn-b5baa2ed5f2f
 def weights_init_uniform_rule(m):
-    classname = m.__class__.__name__
-    # for every Linear layer in a model..
-    if classname.find('Linear') != -1:
-        # get the number of the inputs
-        n = m.in_features
-        y = 1.0/np.sqrt(n)
-        m.weight.data.uniform_(-y, y)
-        m.bias.data.fill_(0)
+  classname = m.__class__.__name__
+  # for every Linear layer in a model..
+  if classname.find('Linear') != -1:
+    # get the number of the inputs
+    n = m.in_features
+    y = 1.0 / np.sqrt(n)
+    m.weight.data.uniform_(-y, y)
+    m.bias.data.fill_(0)
 
 
 # xavier initialization for tanh layers
 # source: https://medium.com/ai%C2%B3-theory-practice-business/initializing-the-weights-in-nn-b5baa2ed5f2f
 def weights_init_xavier(m):
-    if type(m) == torch.nn.Linear:
-      torch.nn.init.xavier_uniform_(m.weight)
-      torch.nn.init.zeros_(m.bias)
+  if isinstance(m, nn.Linear):
+    nn.init.xavier_uniform_(m.weight)
+    nn.init.zeros_(m.bias)
 
 
 def nn_V_2d():
