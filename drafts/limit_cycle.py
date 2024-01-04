@@ -37,7 +37,7 @@ mask = tand(mask, tand(
     tand(X[:, 0] <= 0.75, X[:, 1] <= 0.75),
     tand(X[:, 0] >= -0.75, X[:, 1] >= -0.75))
 )
-X = X[mask]
+# X = X[mask]
 
 # Marking samples with colors
 C = env.mark(X)
@@ -59,5 +59,7 @@ learner.fit(S, n_epoch=n_epoch, batch_size=batch_size, lr=lr)
 cc = learner.color_chk(S, eps=0.012345).detach()
 
 plt.scatter(X[:, 0], X[:, 1], s=1, c=cc == 0)
+plt.xlim(-2.1, 2.1)
+plt.ylim(-2.1, 2.1)
 plt.show()
 plt.close()

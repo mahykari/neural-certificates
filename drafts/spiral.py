@@ -3,7 +3,7 @@ import logging
 import torch
 from matplotlib import pyplot as plt  # noqa
 
-from learner import Learner_3Parity_P, nn_P_2d
+from learner import Learner_3Parity_P, nn_P
 from envs import Spiral
 
 # Logging setup
@@ -20,7 +20,7 @@ logger.setLevel(logging.DEBUG)
 
 env = Spiral()
 
-learner = Learner_3Parity_P(env, [nn_P_2d()])
+learner = Learner_3Parity_P(env, [nn_P(2)])
 
 X = env.sample()
 
