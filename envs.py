@@ -1,4 +1,4 @@
-from abc import ABC, abstractproperty
+from abc import ABC, abstractproperty, abstractmethod
 from typing import Callable, List  # noqa
 
 import sympy as sp
@@ -45,10 +45,12 @@ class Env(ABC):
     """Target space of the environment."""
     ...
 
-  @abstractproperty
-  def f(self, *args):
-    """State transition function."""
+  @abstractmethod
+  def nxt(self, *args):
     ...
+
+  def f(self, *args):
+    return self.nxt(*args)
 
   @property
   def device(self):
@@ -88,9 +90,6 @@ class Spiral(Env):
     x_nxt[:, 0] = a * x[:, 0] + b * x[:, 1]
     x_nxt[:, 1] = -b * x[:, 0] + a * x[:, 1]
     return x_nxt
-
-  # Alias for nxt, for simpler notation
-  f = nxt
 
   def sample(self):
     """Returns a tuple of samples from different regions of the state
@@ -177,9 +176,6 @@ class SuspendedPendulum(Env):
     ) * tau
     return x_nxt
 
-  # Alias for nxt, for simpler notation
-  f = nxt
-
   def sample(self):
     N = 100
     X = [None for i in range(N)]
@@ -221,8 +217,6 @@ class Unstable2D(Env):
 
   def nxt(self, x):
     return self.RATIO * x
-
-  f = nxt
 
   def sample(self):
     S = torch.randn(10000, 2)
@@ -334,9 +328,6 @@ class LimitCycle(Env):
     x_new[:, 1] = r_new * torch.sin(theta_new)
 
     return x_new
-
-  # Alias for nxt, for simpler notation
-  f = nxt
 
   @staticmethod
   def sample(n=16000):
@@ -545,8 +536,28 @@ def coord2box(coord):
 #   def color_2(self, x):
 #     return contains([self.C2], x)
 
+class Map(Env):
+  @abstractproperty
+  def colors(self):
+    ...
 
-class Map3x3(Env):
+  def color_0(self, x):
+    coord = x.floor().int()
+    idx = coord[:, 0], coord[:, 1]
+    return self.colors[idx] == 0
+
+  def color_1(self, x):
+    coord = x.floor().int()
+    idx = coord[:, 0], coord[:, 1]
+    return self.colors[idx] == 1
+
+  def color_2(self, x):
+    coord = x.floor().int()
+    idx = coord[:, 0], coord[:, 1]
+    return self.colors[idx] == 2
+
+
+class Map3x3(Map):
   # 3x3 tiled map, with colors:
   # 2 2 2
   # 1 1 2
@@ -585,20 +596,47 @@ class Map3x3(Env):
       [0, 0, 3],
   ]).int().T
 
-  def color_0(self, x):
-    coord = x.floor().int()
-    idx = coord[:, 0], coord[:, 1]
-    return self.colors[idx] == 0
+  def mark(self, x):
+    return self.color_1(x) + 2 * self.color_2(x)
 
-  def color_1(self, x):
+  def nxt(self, x):
     coord = x.floor().int()
     idx = coord[:, 0], coord[:, 1]
-    return self.colors[idx] == 1
+    cd = self.cell_dirs[idx]
+    d = self.dirs[cd]
+    return x + d
 
-  def color_2(self, x):
-    coord = x.floor().int()
-    idx = coord[:, 0], coord[:, 1]
-    return self.colors[idx] == 2
+  def sample(self, n_samples):
+    return torch.rand(n_samples, 2) * 3
+
+
+class Map2x2(Map):
+  dim = 2
+
+  bnd = Box(
+      low=torch.Tensor([0, 0]),
+      high=torch.Tensor([3, 3]),
+  )
+
+  tgt = None
+
+  # Rows are inverted.
+  colors = torch.Tensor([
+      [2, 0],
+      [0, 1],
+  ]).int().T
+
+  dirs = torch.Tensor([
+      [1, 0],  # R
+      [0, 1],  # U
+      [-1, 0],  # L
+      [0, -1],  # D
+  ])
+
+  cell_dirs = torch.Tensor([
+      [0, 2],
+      [0, 2],
+  ]).int().T
 
   def mark(self, x):
     return self.color_1(x) + 2 * self.color_2(x)
@@ -608,10 +646,7 @@ class Map3x3(Env):
     idx = coord[:, 0], coord[:, 1]
     cd = self.cell_dirs[idx]
     d = self.dirs[cd]
-    # print(torch.cat((x, coord, x + d), dim=1))
     return x + d
 
-  f = nxt
-
   def sample(self, n_samples):
-    return torch.rand(n_samples, 2) * 3
+    return torch.rand(n_samples, 2) * 2
