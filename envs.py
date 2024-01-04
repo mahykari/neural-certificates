@@ -1,4 +1,3 @@
-import math
 from abc import ABC, abstractproperty
 from typing import Callable, List  # noqa
 
@@ -8,15 +7,15 @@ import torch
 
 class Box:
   """Arbitrary-dimensional bounded box.
-  
+
   Box is initialized with two points:
-    low  = [l_1, ..., l_k], and 
-    high = [h_1, ..., h_k]. 
-  Each point x = [x_1, ..., x_k] inside this box satisfies condition 
+    low  = [l_1, ..., l_k], and
+    high = [h_1, ..., h_k].
+  Each point x = [x_1, ..., x_k] inside this box satisfies condition
   l_i <= x_i <= h_i for all 1 <= i <= k.
 
-  The choice of torch.Tensor as the type for low and high was to 
-  simplify dependent torch computations. This condition can be 
+  The choice of torch.Tensor as the type for low and high was to
+  simplify dependent torch computations. This condition can be
   relaxed in the future.
   """
   def __init__(self, low: torch.Tensor, high: torch.Tensor):
@@ -27,7 +26,7 @@ class Box:
 class Env(ABC):
   """Generic base class for all defined environments.
 
-  *IMPORTANT*: All defined environments should inherit from this 
+  *IMPORTANT*: All defined environments should inherit from this
   class.
   """
 
@@ -60,21 +59,21 @@ class Env(ABC):
 
 class Spiral(Env):
   ALPHA, BETA = 0.5, 0.5
-  """A simple 2-dimensional dynamical system with a spiral 
+  """A simple 2-dimensional dynamical system with a spiral
   trajectory."""
 
   dim = 2
 
   bnd = Box(
-    low =torch.Tensor([-1.0, -1.0]),
-    high=torch.Tensor([ 1.0,  1.0]),
+      low=torch.Tensor([-1.0, -1.0]),
+      high=torch.Tensor([1.0, 1.0]),
   )
 
   init = bnd
 
   tgt = Box(
-    low =torch.Tensor([-0.05, -0.05]),
-    high=torch.Tensor([ 0.05,  0.05]),
+      low=torch.Tensor([-0.05, -0.05]),
+      high=torch.Tensor([0.05, 0.05]),
   )
 
   def __init__(self, alpha: float = ALPHA, beta: float = BETA):
@@ -86,9 +85,8 @@ class Spiral(Env):
     a, b = self.alpha, self.beta
 
     x_nxt = torch.zeros_like(x)
-    x_nxt[:, 0] = a*x[:, 0] + b*x[:, 1]
-    x_nxt[:, 1] = -b*x[:, 0] + a*x[:, 1] 
-    # return x @ A.T
+    x_nxt[:, 0] = a * x[:, 0] + b * x[:, 1]
+    x_nxt[:, 1] = -b * x[:, 0] + a * x[:, 1]
     return x_nxt
 
   # Alias for nxt, for simpler notation
@@ -107,8 +105,7 @@ class Spiral(Env):
     x_init = torch.Tensor(2000, self.dim).uniform_(0., 1.)
     x_min, x_max = self.init.low, self.init.high
     for i in range(self.dim):
-      x_init[:, i] = x_init[:, i] * (x_max[i] - x_min[i]) + x_min[i] 
-    
+      x_init[:, i] = x_init[:, i] * (x_max[i] - x_min[i]) + x_min[i]
     X[0] = x_init
     for i in range(1, N):
       X[i] = self.f(X[i - 1])
@@ -121,40 +118,40 @@ def F_Spiral(x, alpha=Spiral.ALPHA, beta=Spiral.BETA):
   fx = sp.symbols('fx_0 fx_1')
   fx = sp.Matrix(fx)
   A = sp.Matrix([
-    [alpha,  beta],
-    [-beta, alpha]
+      [alpha, beta],
+      [-beta, alpha]
   ])
   Ax = A @ x
   return fx, [
-    sp.Eq(fx[0], Ax[0]),
-    sp.Eq(fx[1], Ax[1]),
+      sp.Eq(fx[0], Ax[0]),
+      sp.Eq(fx[1], Ax[1]),
   ]
 
 
 class SuspendedPendulum(Env):
   """A simple 2-dimensional pendulum, suspended freely."""
-  # G = gravitational acceleration, 
-  # L = rod length, 
+  # G = gravitational acceleration,
+  # L = rod length,
   # M = bob mass,
   # B = damping coefficient
   G, L, M, B = 9.8, 1, 1, 0.2
-  TAU = 0.01 # Sampling time delta
+  TAU = 0.01  # Sampling time delta
   dim = 2
 
+  # The bounds on the angular velocity are too pessimistic for now
   bnd = Box(
-    # The bounds on the angular velocity are too pessimistic for now
-    low=torch.Tensor([-3.14, -8]),
-    high=torch.Tensor([3.14, 8]),
+      low=torch.Tensor([-3.14, -8]),
+      high=torch.Tensor([3.14, 8]),
   )
 
   init = Box(
-    low=torch.Tensor([-1.57, -1]),
-    high=torch.Tensor([1.57, 1]),
+      low=torch.Tensor([-1.57, -1]),
+      high=torch.Tensor([1.57, 1]),
   )
 
   tgt = Box(
-    low=torch.Tensor([-0.05, -0.05]),
-    high=torch.Tensor([0.05, 0.05]),
+      low=torch.Tensor([-0.05, -0.05]),
+      high=torch.Tensor([0.05, 0.05]),
   )
 
   def __init__(
@@ -164,20 +161,20 @@ class SuspendedPendulum(Env):
       m: float = M,
       b: float = B):
     self.g = g
-    self.l = l
+    self.l_ = l
     self.m = m
     self.b = b
 
   def nxt(self, x: torch.Tensor):
     """The transition function f: X -> X."""
-    g, l, m, b = self.g, self.l, self.m, self.b
+    g, l, m, b = self.g, self.l_, self.m, self.b
     tau = self.TAU
 
     x_nxt = torch.zeros_like(x)
-    x_nxt[:, 0] = x[:, 0] + x[:, 1]*tau
+    x_nxt[:, 0] = x[:, 0] + x[:, 1] * tau
     x_nxt[:, 1] = x[:, 1] + (
-      -(b/m)*x[:, 1] - (g/l)*torch.sin(x[:, 0])
-    )*tau
+        -(b / m) * x[:, 1] - (g / l) * torch.sin(x[:, 0])
+    ) * tau
     return x_nxt
 
   # Alias for nxt, for simpler notation
@@ -189,8 +186,7 @@ class SuspendedPendulum(Env):
     x_init = torch.Tensor(100, self.dim).uniform_(0., 1.)
     x_min, x_max = self.init.low, self.init.high
     for i in range(self.dim):
-      x_init[:, i] = x_init[:, i] * (x_max[i] - x_min[i]) + x_min[i] 
-    
+      x_init[:, i] = x_init[:, i] * (x_max[i] - x_min[i]) + x_min[i]
     X[0] = x_init
     for i in range(1, N):
       X[i] = self.f(X[i - 1])
@@ -199,25 +195,26 @@ class SuspendedPendulum(Env):
     return S
 
 
-def F_SuspendedPendulum(x, g=9.8, l=1, m=1, b=0.2, tau=0.01):
+def F_SuspendedPendulum(x, g=9.8, l_=1, m=1, b=0.2, tau=0.01):
   fx = sp.symbols('fx_0 fx_1')
   fx = sp.Matrix(fx)
   return fx, [
-    sp.Eq(fx[0], x[0] + x[1]*tau),
-    sp.Eq(fx[1], x[1] + (-(b/m)*x[1] - (g/l)*sp.sin(x[0]))*tau)
+      sp.Eq(fx[0], x[0] + x[1] * tau),
+      sp.Eq(fx[1], x[1] + (
+          -(b / m) * x[1] - (g / l_) * sp.sin(x[0])) * tau)
   ]
 
 
 class Unstable2D(Env):
   dim = 2
   bnd = Box(
-    low=torch.Tensor([-100, -100]),
-    high=torch.Tensor([100, 100]),
+      low=torch.Tensor([-100, -100]),
+      high=torch.Tensor([100, 100]),
   )
 
   tgt = Box(
-    low=torch.Tensor([-1, -1]),
-    high=torch.Tensor([1, 1]),
+      low=torch.Tensor([-1, -1]),
+      high=torch.Tensor([1, 1]),
   )
 
   RATIO = -1.1
@@ -236,8 +233,8 @@ def F_Unstable2D(x):
   fx = sp.symbols('fx_0 fx_1')
   fx = sp.Matrix(fx)
   return fx, [
-    sp.Eq(fx[0], Unstable2D.RATIO * x[0]),
-    sp.Eq(fx[1], Unstable2D.RATIO * x[1]),
+      sp.Eq(fx[0], Unstable2D.RATIO * x[0]),
+      sp.Eq(fx[1], Unstable2D.RATIO * x[1]),
   ]
 
 
@@ -248,27 +245,27 @@ def box_diff(a: Box, b: Box):
 
   # ASSUMPTION. a and b are both 2D.
   assert (
-      a.low.shape[0] == b.low.shape[0] == 2 
+      a.low.shape[0] == b.low.shape[0] == 2
       and len(a.low.shape) == 1)
-  
+
   c = Box(
-    low=a.low,
-    high=torch.Tensor([b.low[0],a.high[1]])
+      low=a.low,
+      high=torch.Tensor([b.low[0], a.high[1]])
   )
 
   d = Box(
-    low=torch.Tensor([b.high[0],a.low[1]]),
-    high=a.high
+      low=torch.Tensor([b.high[0], a.low[1]]),
+      high=a.high
   )
 
   e = Box(
-    low=torch.Tensor([b.low[0],a.low[1]]),
-    high=torch.Tensor([b.high[0],b.low[1]])
+      low=torch.Tensor([b.low[0], a.low[1]]),
+      high=torch.Tensor([b.high[0], b.low[1]])
   )
 
   g = Box(
-    low=torch.Tensor([b.low[0],b.high[1]]),
-    high=torch.Tensor([b.high[0],a.high[1]])
+      low=torch.Tensor([b.low[0], b.high[1]]),
+      high=torch.Tensor([b.high[0], a.high[1]])
   )
 
   return [c, d, e, g]
@@ -404,7 +401,9 @@ def coord2box(coord):
 #     i = torch.randint(0, n_g0 - 1)
 #     j = torch.randint(0, n_g1 - 1)
 #     grid_colors[i][j] = 0
-#   for k in range(n_c1): # randomly mark n_c1 many cells (which are not assigned 0 already) with color 1
+#   # randomly mark n_c1 many cells
+#   # (which are not assigned 0 already) with color 1
+#   for k in range(n_c1):
 #     i = torch.randint(0, n_g0 - 1)
 #     j = torch.randint(0, n_g1 - 1)
 #     if grid_colors[i][j] != 0:
@@ -422,13 +421,17 @@ def coord2box(coord):
 #   # (0,0)   (0,1)   (0,2)   ...   (0, n_g0 - 1)
 
 #   # dimensions of each grid cell
-#   eta_x = torch.div(torch.sub(bnd_x.high[0:1], bnd_x.low[0:1]), torch.Tensor([n_g0, n_g1]))
+#   eta_x = torch.div(
+#       torch.sub(bnd_x.high[0:1], bnd_x.low[0:1]), torch.Tensor([n_g0, n_g1]))
 #   C0, C1, C2 = [], [], []
 #   for i in range(n_g0):
 #     for j in range(n_g1):
 #       b = Box(
-#         low=torch.Tensor([bnd_x.low[0] + i * eta_x[0], bnd_x.low[1] + j * eta_x[1]]),
-#         high=torch.Tensor([bnd_x.low[0] + (i + 1) * eta_x[0], bnd_x.low[1] + (j + 1) * eta_x[1]])
+#         low=torch.Tensor([
+#             bnd_x.low[0] + i * eta_x[0], bnd_x.low[1] + j * eta_x[1]]),
+#         high=torch.Tensor([
+#             bnd_x.low[0] + (i + 1) * eta_x[0],
+#             bnd_x.low[1] + (j + 1) * eta_x[1]])
 #       )
 #       if grid_colors[i][j] == 0:
 #         C0.append(b)
@@ -476,12 +479,14 @@ def coord2box(coord):
 
 # class Reservoir(Env):
 #   """A simple 1-dimensional water reservoir"""
-#   # the state represents the water level, where level 0 corresponds to reservoir being empty
+#   # the state represents the water level,
+#   # where level 0 corresponds to reservoir being empty
 #   bnd_x = Box(
 #     low=[0.0],
 #     high=[10.0]
 #   )
-#   # the control input represents the rate of outward flow of water from the reservoir
+#   # the control input represents
+#   # the rate of outward flow of water from the reservoir
 #   bnd_u = Box(
 #     low=[0.0],
 #     high=[0.5]
@@ -493,7 +498,8 @@ def coord2box(coord):
 #   )
 #   # sampling time
 #   TAU = 0.05
-#   # specification: GF HIGH -> GF LOW, where HIGH and LOW represent water levels with HIGH > LOW
+#   # specification: GF HIGH -> GF LOW,
+#   # where HIGH and LOW represent water levels with HIGH > LOW
 #   HIGH = 9.0
 #   LOW = 5.0
 #   C0 = Box(
@@ -517,7 +523,8 @@ def coord2box(coord):
 #     tau = self.TAU
 #     x_new = torch.zeros_like(x)
 #     x_new[:, 0] = x[:, 0] - u[:, 0] * tau + w[:, 0] * tau
-#     x_new[:, 0] = max(self.bnd_x.low[0], min(x_new[:, 0], self.bnd_x.high[0])) # saturate at the boundaries
+#     # saturate at the boundaries
+#     x_new[:, 0] = max(self.bnd_x.low[0], min(x_new[:, 0], self.bnd_x.high[0]))
 #     return x_new
 
 #   # Alias for nxt, for simpler notation
