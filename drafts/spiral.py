@@ -44,7 +44,7 @@ for i in torch.randint(0, len(S), (10,)):
       + f'P(f(x)) = {learner.P(env.f(X[i:i+1])).detach()}, '
   )
 
-cl = learner.color_loss(S, eps=0.012345).detach()
-plt.scatter(X[:, 0], X[:, 1], s=1, c=cl)
+cc = learner.color_chk(S).detach()
+plt.scatter(X[:, 0], X[:, 1], s=1, c=cc == 0)
 plt.show()
 plt.close()
