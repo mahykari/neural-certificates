@@ -398,7 +398,7 @@ class Learner_3Parity_P(Learner):
     # so that it indicates when the model always predicts 0.
     X, C = S[:, :-1], S[:, -1:]
     C = torch.squeeze(C)
-    p, p_nxt = self.P(X / 3 - 0.5), self.P(self.env.f(X) / 3 - 0.5)
+    p, p_nxt = self.P(X), self.P(self.env.f(X))
     cc = [torch.tensor([]) for _ in range(3)]
     ind_ge = [torch.tensor([]) for _ in range(3)]
     ind_gt = [torch.tensor([]) for _ in range(3)]
@@ -453,7 +453,7 @@ class Learner_3Parity_P(Learner):
 
     X, C = S[:, :-1], S[:, -1:]
     C = torch.squeeze(C)
-    p, p_nxt = self.P(X / 3 - 0.5), self.P(self.env.f(X) / 3 - 0.5)
+    p, p_nxt = self.P(X), self.P(self.env.f(X))
     ind_ge = [torch.tensor([]) for _ in range(3)]
     ind_gt = [torch.tensor([]) for _ in range(3)]
     # For every x:
