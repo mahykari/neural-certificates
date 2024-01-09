@@ -2,6 +2,7 @@ import logging
 import sys  # noqa
 
 import torch
+import torch.nn as nn  # noqa
 from matplotlib import pyplot as plt  # noqa
 
 from learner import Learner_3Parity_P, nn_P
@@ -19,12 +20,21 @@ root_logger.addHandler(handler)
 # but might actually end in a suboptimal state.
 # We can ignore this for now.
 
+P = nn.Sequential(
+    nn.Linear(2, 128),
+    nn.ReLU(),
+    nn.Linear(128, 128),
+    nn.ReLU(),
+    nn.Linear(128, 3),
+    nn.Softplus()
+)
+
 n_epoch, batch_size, lr = sys.argv[1:4]
 n_epoch, batch_size, lr = int(n_epoch), int(batch_size), float(lr)
 
 env = Map3x3()
 
-learner = Learner_3Parity_P(env, [nn_P(2)])
+learner = Learner_3Parity_P(env, [P])
 
 n_div = 100
 X = torch.linspace(0, 3 - 1 / n_div, n_div)
