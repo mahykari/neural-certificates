@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn  # noqa
 from matplotlib import pyplot as plt  # noqa
 
-from learner import Learner_3Parity_P, nn_P
+from learner import Learner_3Parity_P
 from envs import LimitCycle
 
 # Logging setup
