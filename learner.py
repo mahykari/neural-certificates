@@ -56,11 +56,11 @@ def nn_P(n_dims):
   """
   net = nn.Sequential(
       nn.Linear(n_dims, 128),
-      nn.Tanh(),
+      nn.ReLU(),
       nn.Linear(128, 128),
-      nn.Tanh(),
+      nn.ReLU(),
       nn.Linear(128, 3),
-      nn.Softplus()
+      nn.Softplus(beta=10)
   )
   # --- initialization ---
   # net[0].apply(weights_init_xavier)
@@ -151,7 +151,7 @@ class Learner(ABC):
       optimizer.step()
       return loss, chk
 
-    def training_loop():
+    def training_loop() -> None:
       n_batch = (len(S) + batch_size - 1) // batch_size
       assert batch_size * n_batch >= len(S)
       loader = D.DataLoader(S, batch_size=batch_size)
@@ -171,6 +171,8 @@ class Learner(ABC):
             + f'LR={optimizer.param_groups[0]["lr"]:13.8f}, ',
         )
         scheduler.step()
+        if chk == 100:
+          return
 
     training_loop()
     return el
@@ -384,30 +386,35 @@ class Learner_3Parity_P(Learner):
         lr=lr)
 
   def loss(self, S):
-    cl = self.color_loss(S, eps=1e-4)
+    cl = self.color_loss(S)
     return torch.mean(cl)
 
   def chk(self, S):
-    cc = self.color_chk(S, eps=0.012345)
+    cc = self.color_chk(S)
     return torch.mean((cc == 1).float()) * 100
 
-  def color_chk(self, S, eps=0.012345, verbose=False):
+  def color_chk(self, S, eps=1e-4, verbose=False):
     # The value for eps is specifically chosen
     # so that it indicates when the model always predicts 0.
     X, C = S[:, :-1], S[:, -1:]
     C = torch.squeeze(C)
-    p, p_nxt = self.P(X), self.P(self.env.f(X))
+    p, p_nxt = self.P(X / 3 - 0.5), self.P(self.env.f(X) / 3 - 0.5)
     cc = [torch.tensor([]) for _ in range(3)]
+    ind_ge = [torch.tensor([]) for _ in range(3)]
+    ind_gt = [torch.tensor([]) for _ in range(3)]
+    for i in range(3):
+      ind_ge[i] = p[:, i] >= p_nxt[:, i]
+      ind_gt[i] = p[:, i] > p_nxt[:, i] + eps
     cc[0] = p[:, 0] >= p_nxt[:, 0]
     cc[1] = torch.logical_and(
-        p[:, 0] >= p_nxt[:, 0],
+        ind_ge[0],
         torch.logical_or(
-            p[:, 0] > p_nxt[:, 0], p[:, 1] > p_nxt[:, 1]))
+            ind_gt[0], ind_gt[1]))
     cc[2] = torch.logical_and(
-        p[:, 0] >= p_nxt[:, 0], torch.logical_or(
-            p[:, 0] > p_nxt[:, 0], torch.logical_and(
-                p[:, 1] >= p_nxt[:, 1], torch.logical_or(
-                    p[:, 1] > p_nxt[:, 1], p[:, 2] >= p_nxt[:, 2]))))
+        ind_ge[0], torch.logical_or(
+            ind_gt[0], torch.logical_and(
+                ind_ge[1], torch.logical_or(
+                    ind_gt[1], ind_ge[2]))))
     for i in range(3):
       cc[i] = cc[i] * (C == i)
 
@@ -446,7 +453,7 @@ class Learner_3Parity_P(Learner):
 
     X, C = S[:, :-1], S[:, -1:]
     C = torch.squeeze(C)
-    p, p_nxt = self.P(X), self.P(self.env.f(X))
+    p, p_nxt = self.P(X / 3 - 0.5), self.P(self.env.f(X) / 3 - 0.5)
     ind_ge = [torch.tensor([]) for _ in range(3)]
     ind_gt = [torch.tensor([]) for _ in range(3)]
     # For every x:
