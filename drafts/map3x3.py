@@ -34,17 +34,17 @@ X = torch.cartesian_prod(X, X)
 # In this example, we can mask out states
 # which have an even color
 # and are part of a cycle.
-mask = torch.logical_and(
-    # Exterior of cell [0, 1] * [0, 1]
-    torch.logical_or(
-        X[:, 0] >= 1, X[:, 1] >= 1
-    ),
-    # Exterior of cell [2, 3] * [1, 2]
-    torch.logical_or(
-        X[:, 0] < 2,
-        torch.logical_or(X[:, 1] < 1, X[:, 1] >= 2)
-    )
-)
+mask = torch.ones_like(X[:, 0] <= 1e4)
+# Exterior of cell [0, 1] * [0, 1]
+mask = torch.logical_and(mask, torch.logical_or(
+    X[:, 0] >= 1, X[:, 1] >= 1))
+# Exterior of cell [2, 3] * [1, 2]
+mask = torch.logical_and(mask, torch.logical_or(
+    X[:, 0] < 2,
+    torch.logical_or(X[:, 1] < 1, X[:, 1] >= 2)))
+# Exterior of cell [2, 3] * [2, 3]
+mask = torch.logical_and(mask, torch.logical_or(
+    X[:, 0] < 2, X[:, 1] < 2))
 X = X[mask]
 
 n_samples = X.shape[0]
@@ -61,7 +61,8 @@ plt.close()
 S = torch.cat((X, C), dim=1)
 print(S)
 
-learner.fit(S, n_epoch=n_epoch, batch_size=batch_size, lr=lr)
+learner.fit(S, n_epoch=n_epoch, batch_size=batch_size,
+            lr=lr, gamma=0.1, step_size=256)
 X = env.sample(10 * n_samples)
 C = env.mark(X).unsqueeze(dim=1)
 S = torch.cat((X, C), dim=1)
