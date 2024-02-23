@@ -5,7 +5,7 @@ matplotlib
 scipy
 notebook
 scikit-learn
-gymnasium
+gym
 
 # Solvers
 dreal
