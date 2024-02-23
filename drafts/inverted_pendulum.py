@@ -125,6 +125,7 @@ def nn_V(n_dims):
       nn.Linear(n_dims, 128),
       nn.ReLU(),
       nn.Linear(128, 1),
+      nn.ReLU(),
   )
 
   return net
