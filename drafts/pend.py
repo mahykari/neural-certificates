@@ -3,6 +3,7 @@
 # the pendulum itself.
 
 from typing import List
+import time
 
 import torch
 import torch.nn as nn
@@ -605,26 +606,22 @@ U = scale(torch.rand(n_samples, 1), env.action_space)
 S = torch.cat((X, U), dim=1)
 
 print('Phase 1. Learning abstraction (A) ... ')
+t_start = time.time()
 
 mask = in_(env.safe_space, X)
 X = X[~mask]
-
-plt.scatter(X[:, 0], X[:, 1], s=1)
-plt.show()
-plt.close()
 
 learner1 = Learner_A(env, [nn_A(n_dims=2, n_controls=1)])
 learner1.fit(S, n_epoch=128, lr=1e-1)
 
 delta = learner1.chk(S)
 
+t_end = time.time()
+print(f'Phase 1. Elapsed time: {t_end - t_start:.2f} s')
+
 print('Phase 2. Learning control, certificate (P, V) ... ')
 print(f'Using A, delta={delta}')
-
-
-plt.scatter(X[:, 0], X[:, 1], s=1)
-plt.show()
-plt.close()
+t_start = time.time()
 
 n_dims = env.safe_space.low.shape[0]
 learner2 = Learner_PV(
@@ -648,7 +645,11 @@ print(
     + f'max={torch.max(learner2.P(X1)):12.6f}, '
 )
 
+t_end = time.time()
+print(f'Phase 2. Elapsed time: {t_end - t_start:.2f} s')
+
 print('Phase 3. Verification using Marabou ...')
+t_start = time.time()
 
 apv = APVComposite(learner1.A, learner2.P, learner2.V, 2)
 apv = apv.Composite
@@ -697,6 +698,9 @@ options = Marabou.createOptions(
     # tighteningStrategy='none',
 )
 chk, vals, _stats = network.solve(options=options)
+
+t_end = time.time()
+print(f'Phase 3. Elapsed time: {t_end - t_start:.2f} s')
 
 print('Phase 4. Visualizing traces using A (det.), P')
 
