@@ -11,7 +11,7 @@ import torch.nn.functional as F
 import torch.utils.data as D
 import torch.optim as optim
 from gym import spaces
-# from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt
 
 from maraboupy import Marabou
 from maraboupy import MarabouUtils, MarabouCore
@@ -609,9 +609,9 @@ print('Phase 1. Learning abstraction (A) ... ')
 mask = in_(env.safe_space, X)
 X = X[~mask]
 
-# plt.scatter(X[:, 0], X[:, 1], s=1)
-# plt.show()
-# plt.close()
+plt.scatter(X[:, 0], X[:, 1], s=1)
+plt.show()
+plt.close()
 
 learner1 = Learner_A(env, [nn_A(n_dims=2, n_controls=1)])
 learner1.fit(S, n_epoch=128, lr=1e-1)
@@ -622,9 +622,9 @@ print('Phase 2. Learning control, certificate (P, V) ... ')
 print(f'Using A, delta={delta}')
 
 
-# plt.scatter(X[:, 0], X[:, 1], s=1)
-# plt.show()
-# plt.close()
+plt.scatter(X[:, 0], X[:, 1], s=1)
+plt.show()
+plt.close()
 
 n_dims = env.safe_space.low.shape[0]
 learner2 = Learner_PV(
@@ -697,4 +697,19 @@ options = Marabou.createOptions(
     # tighteningStrategy='none',
 )
 chk, vals, _stats = network.solve(options=options)
-print(f'Chk = {chk}')
+
+print('Phase 4. Visualizing traces using A (det.), P')
+
+X_test = scale(torch.rand(500, 2), env.reach_space)
+init = in_(env.init_spaces[0], X_test)
+safe = in_(env.safe_space, X_test)
+mask = torch.logical_and(init, ~safe)
+X_test = X_test[mask]
+
+for i in range(20):
+  plt.scatter(X_test[:, 0], X_test[:, 1], s=2)
+  plt.show()
+  U = learner2.P(X_test)
+  XU = torch.cat((X_test, U), dim=1)
+  X_nxt = learner1.A(XU)
+  X_test = X_nxt.detach()
