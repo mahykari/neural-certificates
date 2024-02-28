@@ -18,11 +18,11 @@ We use the Marabou verifier via its Python interface.
 To build Marabou (and _Maraboupy_),
 follow the instructions on 
 the Marabou installation page
-at [[1]]. 
+at [this link](https://neuralnetworkverification.github.io/Marabou/Setup/0_Installation.html). 
 **Before** compiling,
 make sure to change 
 the parameter `INTERVAL_SPLITTING_FREQUENCY`
-(at [[2]])
+(in [this file](https://github.com/NeuralNetworkVerification/Marabou/blob/8129640537d63deac485daaf0f2f1c09e247e928/src/configuration/GlobalConfiguration.cpp#L63))
 to `1`.
 This might cause some tests to fail; it is OK.
 
@@ -35,11 +35,8 @@ This lets us use `maraboupy` as a module in this project.
 
 # Using `neural_clbf`
 
-The project `neural_clbf` is available at [[3]].
+The project `neural_clbf` is available at 
+[this page](https://github.com/MIT-REALM/neural_clbf.git).
 Follow the instructions on their page.
 You might want to make a link to `neural_clbf`.
 Steps are the same as the case with `maraboupy`.
-
-[1]: https://neuralnetworkverification.github.io/Marabou/Setup/0_Installation.html
-[2]: https://github.com/NeuralNetworkVerification/Marabou/blob/8129640537d63deac485daaf0f2f1c09e247e928/src/configuration/GlobalConfiguration.cpp#L63
-[3]: https://github.com/MIT-REALM/neural_clbf.git 
