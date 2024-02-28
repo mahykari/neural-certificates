@@ -9,7 +9,8 @@ __pycache__
 
 # Workspace-specific directores
 .idea
-.vscode
+# Not ignoring VS Code
+# .vscode
 
 # Link files to external repositories
 maraboupy
