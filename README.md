@@ -33,5 +33,13 @@ ln -s /path/to/Marabou/maraboupy .
 ```
 This lets us use `maraboupy` as a module in this project.
 
+# Using `neural_clbf`
+
+The project `neural_clbf` is available at [[3]].
+Follow the instructions on their page.
+You might want to make a link to `neural_clbf`.
+Steps are the same as the case with `maraboupy`.
+
 [1]: https://neuralnetworkverification.github.io/Marabou/Setup/0_Installation.html
 [2]: https://github.com/NeuralNetworkVerification/Marabou/blob/8129640537d63deac485daaf0f2f1c09e247e928/src/configuration/GlobalConfiguration.cpp#L63
+[3]: https://github.com/MIT-REALM/neural_clbf.git 
