@@ -4,8 +4,8 @@ A prototype learner-verifier for dynamical systems.
 
 # Cautions for using this repository
 
-Most of the code here is written experimentally;
-some modules are stale, and will not work.
+Most of the code here is written experimentally.
+Some modules are stale, and will not work.
 Some modules are duplicates of other modules.
 My _suggestion_ is to look at the drafts;
 at commit 
