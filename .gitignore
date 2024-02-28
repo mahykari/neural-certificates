@@ -12,3 +12,6 @@ __pycache__
 # Not ignoring VS Code
 # .vscode
 
+# Link files to external repositories
+maraboupy
+neural_clbf

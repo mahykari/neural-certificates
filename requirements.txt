@@ -5,7 +5,9 @@ matplotlib
 scipy
 notebook
 scikit-learn
-gymnasium
+gym
+onnx
+onnxruntime
 
 # Solvers
 dreal
@@ -13,7 +15,3 @@ z3-solver
 cvc5
 sympy
 pysmt
-onnx
-onnxruntime
-# TODO. Try to remove this package and use our own build.
-maraboupy
