@@ -1,4 +1,4 @@
-This folder contains my personal drafts.
+This directory contains my personal drafts.
 Most of the code here is 
 what I have written 
 in my better-organized modules
