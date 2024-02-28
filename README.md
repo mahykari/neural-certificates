@@ -40,3 +40,9 @@ The project `neural_clbf` is available at
 Follow the instructions on their page.
 You might want to make a link to `neural_clbf`.
 Steps are the same as the case with `maraboupy`.
+
+# The `playground` notebook
+
+As the name suggests, it is only a playground.
+All useful things from the playground are 
+already implemented in the source files (or drafts).
