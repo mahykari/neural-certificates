@@ -2,6 +2,8 @@
 
 A prototype learner-verifier for dynamical systems. 
 
+**This project is no longer maintained actively. Please don't use it as a reference for your work.**
+
 # Cautions for using this repository
 
 Most of the code here is written experimentally.
